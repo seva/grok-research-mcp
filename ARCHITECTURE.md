@@ -20,6 +20,8 @@ securely with DPAPI.
 
 Guard clauses. Graceful degradation. No silent failures. Explicit error types.
 
+Code as documentation — names and structure must be self-explanatory. Comments explain why, not what. Maximize semantic and cognitive ROI.
+
 ---
 
 ## System Diagram
