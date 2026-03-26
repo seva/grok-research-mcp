@@ -21,6 +21,26 @@
 
 ---
 
+## Commit discipline
+
+Commit at task completion, not session end. One logical unit of work per commit.
+
+**Message format:**
+```
+<type>(<scope>): <summary>
+
+Closes #N   ← for fix/feat commits that resolve a tracked issue
+Refs #N     ← for commits that advance but don't close an issue
+```
+
+Rules:
+- Every fix commit references its issue (`Closes #N` or `Refs #N`)
+- Every phase completion is a commit
+- Do not batch unrelated changes into one commit
+- `IMPLEMENTATION.md` checkbox updates go in the same commit as the work they track
+
+---
+
 ## Failure Handling
 
 Any failure triggers the research sequence: Hypothesis → online (docs + community) → source code.
