@@ -60,6 +60,30 @@ def mock_send_with_canonical():
     return _gen
 
 
+@pytest.fixture
+def mock_send_with_render_tags():
+    """Mock where modelResponse.message contains grok:render citation tags."""
+    async def _gen(*args, **kwargs):
+        yield None, "conv-abc", None
+        yield None, None, {
+            "message": (
+                "Paris is the capital of France"
+                '<grok:render card_id="85dac1" card_type="citation_card"'
+                ' type="render_inline_citation">'
+                '<argument name="citation_id">21</argument>'
+                "</grok:render>"
+                " and a major European city."
+                '<grok:render card_id="f3a9c2" card_type="citation_card"'
+                ' type="render_inline_citation">'
+                '<argument name="citation_id">5</argument>'
+                "</grok:render>"
+            ),
+            "webSearchResults": [],
+        }
+
+    return _gen
+
+
 @pytest.mark.asyncio
 async def test_grok_web_search_returns_text_and_sources(mock_send):
     with patch("grok_research_mcp.tools.research.send_message", mock_send):
@@ -71,6 +95,19 @@ async def test_grok_web_search_returns_text_and_sources(mock_send):
     assert "Paris is the capital of France." in result
     assert "Sources:" in result
     assert "France - Wikipedia" in result
+
+
+@pytest.mark.asyncio
+async def test_grok_render_tags_stripped_from_response(mock_send_with_render_tags):
+    with patch("grok_research_mcp.tools.research.send_message", mock_send_with_render_tags):
+        with patch("grok_research_mcp.tools.research._get_session") as mock_ctx:
+            mock_ctx.return_value.__aenter__ = AsyncMock(return_value=MagicMock())
+            mock_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
+            result = await grok_web_search("capital of France")
+
+    assert "<grok:render" not in result
+    assert "Paris is the capital of France" in result
+    assert "and a major European city." in result
 
 
 @pytest.mark.asyncio

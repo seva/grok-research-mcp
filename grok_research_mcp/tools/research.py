@@ -1,6 +1,9 @@
+import re
 from contextlib import asynccontextmanager
 
 import httpx
+
+_GROK_RENDER_TAG = re.compile(r"<grok:render[^>]*>.*?</grok:render>", re.DOTALL)
 
 from grok_research_mcp.auth.store import load, AuthRequired
 from grok_research_mcp.client.session import build_session, AuthExpired, AccessDenied
@@ -33,7 +36,7 @@ async def _run_query(query: str, mode: str) -> str:
                     citations = parse_citations(model_response)
                     canonical = model_response.get("message")
                     if canonical:
-                        text = canonical
+                        text = _GROK_RENDER_TAG.sub("", canonical)
             return _format_result(text, citations)
     except (AuthRequired, AuthExpired) as e:
         return f"Error: Auth required. Run: python -m grok_research_mcp auth ({e})"
