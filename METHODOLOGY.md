@@ -21,6 +21,14 @@
 
 ---
 
+## Failure Handling
+
+Any failure triggers the research sequence: Hypothesis → online (docs + community) → source code.
+Do not retry without diagnosis. Do not proceed to the next task until the failure is understood.
+Document findings as a comment on the open phase issue.
+
+---
+
 ## Phase Gate
 
 Phase 2 (`client/endpoints.py`) does not start until `docs/endpoints.md` is committed.
