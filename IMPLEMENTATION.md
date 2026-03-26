@@ -10,6 +10,7 @@ Must complete before writing `client/endpoints.py`.
 - [ ] Read `EveripediaNetwork/grokit` source: cross-reference endpoints, cookie set, bearer token value
 - [ ] Capture a live browser session at `x.com/i/grok`: inspect Network tab for `send-message` request payload
   — identify the parameter that activates web search mode vs. X search mode
+  — **requires user present at browser**: pause and wait for confirmation before proceeding
 - [ ] Record: base URL, conversation init endpoint, message endpoint, streaming protocol, all required headers
 
 Outputs: annotated endpoint reference committed to `docs/endpoints.md`.
