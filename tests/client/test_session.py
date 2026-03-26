@@ -51,3 +51,37 @@ async def test_build_session_raises_access_denied_on_403():
     with pytest.raises(AccessDenied):
         async with build_session(AUTH) as client:
             await client.get("https://grok.com/test")
+
+
+# --- #19: enriched Chrome fingerprint headers ---
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_build_session_includes_accept_language():
+    respx.get("https://grok.com/test").mock(return_value=httpx.Response(200))
+    async with build_session(AUTH) as client:
+        await client.get("https://grok.com/test")
+    request = respx.calls.last.request
+    assert "accept-language" in request.headers
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_build_session_includes_sec_ch_ua_headers():
+    respx.get("https://grok.com/test").mock(return_value=httpx.Response(200))
+    async with build_session(AUTH) as client:
+        await client.get("https://grok.com/test")
+    request = respx.calls.last.request
+    assert "sec-ch-ua" in request.headers
+    assert "sec-ch-ua-mobile" in request.headers
+    assert "sec-ch-ua-platform" in request.headers
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_build_session_includes_dnt_header():
+    respx.get("https://grok.com/test").mock(return_value=httpx.Response(200))
+    async with build_session(AUTH) as client:
+        await client.get("https://grok.com/test")
+    request = respx.calls.last.request
+    assert "dnt" in request.headers

@@ -3,6 +3,10 @@ from typing import AsyncIterator
 
 import httpx
 
+# Update when Chrome releases a new major version.
+_CHROME_VERSION = "134"
+_CHROME_FULL_VERSION = "134.0.0.0"
+
 
 class AuthExpired(Exception):
     pass
@@ -24,17 +28,26 @@ async def build_session(auth: dict) -> AsyncIterator[httpx.AsyncClient]:
     cookies = {c["name"]: c["value"] for c in auth.get("cookies", [])}
     headers = {
         "Accept": "*/*",
+        "Accept-Language": "en-US,en;q=0.9",
         "Content-Type": "application/json",
+        "DNT": "1",
         "Origin": "https://grok.com",
         "Referer": "https://grok.com/",
         "Sec-Fetch-Dest": "empty",
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "same-origin",
         "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/134.0.0.0 Safari/537.36"
+            f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            f"AppleWebKit/537.36 (KHTML, like Gecko) "
+            f"Chrome/{_CHROME_FULL_VERSION} Safari/537.36"
         ),
+        "sec-ch-ua": (
+            f'"Google Chrome";v="{_CHROME_VERSION}", '
+            f'"Not)A;Brand";v="99", '
+            f'"Chromium";v="{_CHROME_VERSION}"'
+        ),
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
     }
     if auth.get("statsig_id"):
         headers["x-statsig-id"] = auth["statsig_id"]

@@ -193,6 +193,42 @@ async def test_run_query_returns_error_on_network_error():
     assert "connection refused" in result
 
 
+# --- #19: per-query jitter delay ---
+
+@pytest.fixture(autouse=True)
+def reset_last_query_time():
+    research_module._last_query_time = 0.0
+    yield
+    research_module._last_query_time = 0.0
+
+
+@pytest.mark.asyncio
+async def test_run_query_no_jitter_on_first_call(mock_send):
+    with patch("grok_research_mcp.tools.research.send_message", mock_send):
+        with patch("grok_research_mcp.tools.research._get_session") as mock_ctx:
+            with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+                _patched_session(mock_ctx)
+                await grok_web_search("test")
+
+    mock_sleep.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_query_applies_jitter_on_consecutive_calls(mock_send):
+    import time
+    research_module._last_query_time = time.monotonic()  # simulate recent prior call
+
+    with patch("grok_research_mcp.tools.research.send_message", mock_send):
+        with patch("grok_research_mcp.tools.research._get_session") as mock_ctx:
+            with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+                _patched_session(mock_ctx)
+                await grok_web_search("test")
+
+    mock_sleep.assert_called_once()
+    sleep_arg = mock_sleep.call_args[0][0]
+    assert 0 < sleep_arg <= research_module._JITTER_MAX
+
+
 # --- #20: HTTP 400 retry with exponential backoff ---
 
 @pytest.mark.asyncio

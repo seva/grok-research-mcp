@@ -1,5 +1,7 @@
 import asyncio
+import random
 import re
+import time
 from contextlib import asynccontextmanager
 
 import httpx
@@ -7,6 +9,10 @@ import httpx
 _RETRY_MAX: int = 3
 _BACKOFF_INITIAL: float = 30.0
 _BACKOFF_MAX: float = 300.0
+
+_last_query_time: float = 0.0
+_JITTER_MIN: float = 2.0
+_JITTER_MAX: float = 8.0
 
 _GROK_RENDER_TAG = re.compile(r"<grok:render[^>]*>.*?</grok:render>", re.DOTALL)
 
@@ -30,6 +36,15 @@ def _format_result(text: str, citations: list) -> str:
 
 
 async def _run_query(query: str, mode: str) -> str:
+    global _last_query_time
+    now = time.monotonic()
+    if _last_query_time > 0:
+        elapsed = now - _last_query_time
+        jitter = random.uniform(_JITTER_MIN, _JITTER_MAX)
+        if elapsed < jitter:
+            await asyncio.sleep(jitter - elapsed)
+    _last_query_time = time.monotonic()
+
     attempt = 0
     backoff = _BACKOFF_INITIAL
     while True:
