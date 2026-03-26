@@ -1,6 +1,6 @@
 # grok-research-mcp
 
-MCP server exposing Grok web research tools to Claude Code via cookie auth + DPAPI.
+MCP server exposing Grok web research tools to any MCP client via cookie auth + DPAPI.
 
 ## Session Start
 1. Read METHODOLOGY.md

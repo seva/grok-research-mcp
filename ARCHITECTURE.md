@@ -1,6 +1,6 @@
 # grok-research-mcp — Architecture
 
-MCP server that exposes Grok's web research tools (web search, X search) to Claude Code.
+MCP server that exposes Grok's web research tools (web search, X search) to any MCP client.
 Authenticates as the user's X account via automated browser login; stores credentials
 securely with DPAPI.
 
@@ -9,7 +9,7 @@ securely with DPAPI.
 ## System Diagram
 
 ```
-Claude Code (MCP client)
+MCP client (e.g. Claude Code, Cursor, Cline)
         │  stdio
         ▼
 ┌─────────────────────────────────┐
@@ -89,11 +89,11 @@ Mid-session expiry:
 ## Request Flow
 
 ```
-Claude Code: tool call grok_web_search("query")
+MCP client: tool call grok_web_search("query")
   → research.py: new_conversation() → conv_id
   → send_message(conv_id, query, mode=web_search)
   → stream_response() → collect text + citations
-  → return formatted result to Claude Code
+  → return formatted result to MCP client
 ```
 
 ---
@@ -107,7 +107,7 @@ Claude Code: tool call grok_web_search("query")
 | Browser mode | Headed | X bot detection; user must complete login/MFA visually |
 | Auth storage | DPAPI (user-scoped) | OS-level encryption tied to Windows user; no key management |
 | HTTP client | `httpx` | Async; cookie jar control; stream support |
-| Transport | stdio | Claude Code native; no port/firewall config |
+| Transport | stdio | MCP standard; no port/firewall config |
 | Grok client base | `mem0ai/grok3-api` + `grokit` | Verified endpoint knowledge; borrow, don't reinvent |
 
 ---

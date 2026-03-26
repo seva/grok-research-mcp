@@ -80,7 +80,7 @@ Depends on Phase 0 discovery outputs.
 
 ## Phase 3 — MCP Server
 
-**Goal:** Claude Code can call `grok_web_search` and `grok_x_search` tools.
+**Goal:** Any MCP client can call `grok_web_search` and `grok_x_search` tools.
 
 ### Tasks
 
@@ -98,7 +98,7 @@ Depends on Phase 0 discovery outputs.
   - Register `grok_web_search` and `grok_x_search`
 - [ ] `__main__.py` serve subcommand: start MCP server
 
-**Verification:** `pytest tests/tools/` passes; `claude mcp add` → `grok_web_search("test")` → returns result.
+**Verification:** `pytest tests/tools/` passes; connect an MCP client → call `grok_web_search("test")` → returns result.
 
 ---
 
@@ -106,11 +106,7 @@ Depends on Phase 0 discovery outputs.
 
 ### Tasks
 
-- [ ] `README.md`: install steps, auth setup, Claude Code config command
-- [ ] Claude Code config:
-  ```
-  claude mcp add --transport stdio grok-research -- python -m grok_research_mcp serve
-  ```
+- [ ] `README.md`: install steps, auth setup, MCP client config examples (Claude Code, Cursor, Cline)
 - [ ] Error handling review: auth expiry UX, API shape changes, network errors
 - [ ] `uv` / `pip` install verified from clean environment
 
