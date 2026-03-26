@@ -1,0 +1,155 @@
+import pytest
+import httpx
+from unittest.mock import AsyncMock, patch, MagicMock
+
+from grok_research_mcp.tools.research import grok_web_search, grok_x_search, _format_result
+from grok_research_mcp.client.session import AccessDenied
+
+
+SAMPLE_TOKENS = ["Paris is the ", "capital of France."]
+SAMPLE_CITATIONS = [
+    {"title": "France - Wikipedia", "url": "https://en.wikipedia.org/wiki/France"},
+    {"title": "Paris Official Site", "url": "https://www.paris.fr"},
+]
+CANONICAL_MESSAGE = "Paris is the capital of France."
+
+
+def test_format_result_with_citations():
+    result = _format_result("Paris is the capital of France.", SAMPLE_CITATIONS)
+    assert "Paris is the capital of France." in result
+    assert "Sources:" in result
+    assert "- [France - Wikipedia](https://en.wikipedia.org/wiki/France)" in result
+    assert "- [Paris Official Site](https://www.paris.fr)" in result
+
+
+def test_format_result_no_citations():
+    result = _format_result("Simple answer.", [])
+    assert "Simple answer." in result
+    assert "Sources:" not in result
+
+
+@pytest.fixture
+def mock_send():
+    """Mock send_message to yield tokens then model_response."""
+    async def _gen(*args, **kwargs):
+        for token in SAMPLE_TOKENS:
+            yield token, None, None
+        yield None, "conv-abc", None
+        yield None, None, {"webSearchResults": [
+            {"title": "France - Wikipedia", "url": "https://en.wikipedia.org/wiki/France", "preview": "..."},
+            {"title": "Paris Official Site", "url": "https://www.paris.fr", "preview": "..."},
+        ]}
+
+    return _gen
+
+
+@pytest.fixture
+def mock_send_with_canonical():
+    """Mock where modelResponse.message differs from streamed tokens."""
+    async def _gen(*args, **kwargs):
+        yield "wrong streamed ", None, None
+        yield "tokens", None, None
+        yield None, "conv-abc", None
+        yield None, None, {
+            "message": CANONICAL_MESSAGE,
+            "webSearchResults": [
+                {"title": "France - Wikipedia", "url": "https://en.wikipedia.org/wiki/France", "preview": "..."},
+            ],
+        }
+
+    return _gen
+
+
+@pytest.mark.asyncio
+async def test_grok_web_search_returns_text_and_sources(mock_send):
+    with patch("grok_research_mcp.tools.research.send_message", mock_send):
+        with patch("grok_research_mcp.tools.research._get_session") as mock_session_ctx:
+            mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=MagicMock())
+            mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
+            result = await grok_web_search("capital of France")
+
+    assert "Paris is the capital of France." in result
+    assert "Sources:" in result
+    assert "France - Wikipedia" in result
+
+
+@pytest.mark.asyncio
+async def test_grok_web_search_uses_model_response_message(mock_send_with_canonical):
+    with patch("grok_research_mcp.tools.research.send_message", mock_send_with_canonical):
+        with patch("grok_research_mcp.tools.research._get_session") as mock_session_ctx:
+            mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=MagicMock())
+            mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
+            result = await grok_web_search("capital of France")
+
+    assert CANONICAL_MESSAGE in result
+    assert "wrong streamed" not in result
+
+
+@pytest.mark.asyncio
+async def test_grok_x_search_uses_x_mode(mock_send):
+    calls = []
+
+    async def _capturing_send(session, conv_id, text, mode):
+        calls.append(mode)
+        async for item in mock_send(session, conv_id, text, mode):
+            yield item
+
+    with patch("grok_research_mcp.tools.research.send_message", _capturing_send):
+        with patch("grok_research_mcp.tools.research._get_session") as mock_session_ctx:
+            mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=MagicMock())
+            mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
+            await grok_x_search("SpaceX")
+
+    assert calls == ["x"]
+
+
+def _patched_session(mock_session_ctx):
+    mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=MagicMock())
+    mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
+
+
+@pytest.mark.asyncio
+async def test_run_query_returns_error_on_access_denied():
+    async def _raising(*args, **kwargs):
+        raise AccessDenied("rate limited")
+        yield  # makes this an async generator
+
+    with patch("grok_research_mcp.tools.research.send_message", _raising):
+        with patch("grok_research_mcp.tools.research._get_session") as mock_ctx:
+            _patched_session(mock_ctx)
+            result = await grok_web_search("test")
+
+    assert "Access denied" in result
+    assert "rate limited" in result
+
+
+@pytest.mark.asyncio
+async def test_run_query_returns_error_on_http_status_error():
+    mock_response = MagicMock()
+    mock_response.status_code = 429
+
+    async def _raising(*args, **kwargs):
+        raise httpx.HTTPStatusError("Too Many Requests", request=MagicMock(), response=mock_response)
+        yield
+
+    with patch("grok_research_mcp.tools.research.send_message", _raising):
+        with patch("grok_research_mcp.tools.research._get_session") as mock_ctx:
+            _patched_session(mock_ctx)
+            result = await grok_web_search("test")
+
+    assert "429" in result
+
+
+@pytest.mark.asyncio
+async def test_run_query_returns_error_on_network_error():
+    async def _raising(*args, **kwargs):
+        raise httpx.NetworkError("connection refused")
+        yield
+
+    with patch("grok_research_mcp.tools.research.send_message", _raising):
+        with patch("grok_research_mcp.tools.research._get_session") as mock_ctx:
+            _patched_session(mock_ctx)
+            result = await grok_web_search("test")
+
+    assert "Network error" in result
+    assert "connection refused" in result
