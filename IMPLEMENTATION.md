@@ -1,0 +1,125 @@
+# grok-research-mcp — Implementation Plan
+
+---
+
+## Phase 0 — Discovery (prerequisite to Phase 2)
+
+Must complete before writing `client/endpoints.py`.
+
+- [ ] Read `mem0ai/grok3-api` source: extract current endpoint URLs, request shapes, response format
+- [ ] Read `EveripediaNetwork/grokit` source: cross-reference endpoints, cookie set, bearer token value
+- [ ] Capture a live browser session at `x.com/i/grok`: inspect Network tab for `send-message` request payload
+  — identify the parameter that activates web search mode vs. X search mode
+- [ ] Record: base URL, conversation init endpoint, message endpoint, streaming protocol, all required headers
+
+Outputs: annotated endpoint reference committed to `docs/endpoints.md`.
+
+---
+
+## Phase 1 — Auth Module
+
+**Goal:** `python -m grok_research_mcp auth` runs browser, captures cookies, stores to DPAPI, confirms.
+
+### Tasks
+
+- [ ] `pyproject.toml` — project scaffold: `mcp`, `playwright`, `httpx`, `pywin32`
+- [ ] `auth/browser.py`
+  - Playwright async: launch Chromium headed
+  - Navigate to `x.com/i/grok`
+  - Poll `context.cookies()` every 2s; done when `sso` + `sso-rw` both present
+  - Capture: all target cookies + bearer token from `on_request` handler (intercept `api.x.com` calls)
+  - Return cookie dict; close browser
+- [ ] `auth/store.py`
+  - `save(data: dict)`: JSON → bytes → `CryptProtectData(dwFlags=CRYPTPROTECT_LOCAL_MACHINE=False)` → write `~/.grok-mcp/auth.dpapi`
+  - `load() -> dict`: read blob → `CryptUnprotectData` → JSON parse; raise `AuthRequired` if file missing
+  - `is_expired() -> bool`: check `sso` cookie `expires` field vs. `time.time()`
+- [ ] `__main__.py` auth subcommand: call browser → save → print confirmation
+
+**Verification:** run auth, confirm `~/.grok-mcp/auth.dpapi` written; run `load()` and print cookie names.
+
+---
+
+## Phase 2 — Grok Client
+
+**Goal:** `GrokClient` can send a message with web/X search mode and return streamed response.
+Depends on Phase 0 discovery outputs.
+
+### Tasks
+
+- [ ] `client/endpoints.py`
+  - `new_conversation(session) -> conv_id`
+  - `send_message(session, conv_id, text, mode: Literal["web", "x", "none"]) -> AsyncIterator[str]`
+  - `parse_citations(raw_response) -> list[dict]`
+  - Populate from `docs/endpoints.md`
+- [ ] `client/session.py`
+  - `build_session(auth: dict) -> httpx.AsyncClient`: inject cookies + `Authorization: Bearer <token>`
+  - `with_auth_retry(fn)`: decorator — on 401/403, call `store.load()`, check `is_expired()`,
+    re-auth if needed, rebuild session, retry once
+- [ ] Manual integration test: send a known query in web search mode, print raw response
+
+**Verification:** query returns text + at least one citation. Both `mode="web"` and `mode="x"` work.
+
+---
+
+## Phase 3 — MCP Server
+
+**Goal:** Claude Code can call `grok_web_search` and `grok_x_search` tools.
+
+### Tasks
+
+- [ ] `tools/research.py`
+  - `grok_web_search(query: str) -> str`: new conv → send (mode=web) → collect stream → format result with citations
+  - `grok_x_search(query: str) -> str`: same, mode=x
+  - Result format: `<response text>\n\nSources:\n- [title](url)\n...`
+- [ ] `server.py`
+  - MCP stdio server via `mcp` Python SDK
+  - On startup: `store.load()` — if `AuthRequired`, exit with message "Run: python -m grok_research_mcp auth"
+  - Register `grok_web_search` and `grok_x_search`
+- [ ] `__main__.py` serve subcommand: start MCP server
+
+**Verification:** `claude mcp add` → ask Claude Code to call `grok_web_search("test")` → returns result.
+
+---
+
+## Phase 4 — Integration + Packaging
+
+### Tasks
+
+- [ ] `README.md`: install steps, auth setup, Claude Code config command
+- [ ] Claude Code config:
+  ```
+  claude mcp add --transport stdio grok-research -- python -m grok_research_mcp serve
+  ```
+- [ ] Error handling review: auth expiry UX, API shape changes, network errors
+- [ ] `uv` / `pip` install verified from clean environment
+
+---
+
+## Dependencies
+
+```toml
+[project]
+name = "grok-research-mcp"
+requires-python = ">=3.11"
+
+dependencies = [
+  "mcp>=1.0",
+  "playwright>=1.40",
+  "httpx>=0.27",
+  "pywin32>=306",
+]
+```
+
+Install Playwright browsers after install:
+```
+playwright install chromium
+```
+
+---
+
+## Open Questions
+
+1. **Research mode parameter** — exact field name + value in `send_message` payload that activates web vs. X search. Resolved in Phase 0.
+2. **Bearer token** — static value or rotated? If rotated per session, must capture fresh each auth run. If static, can hardcode from discovery. Resolved in Phase 0.
+3. **Streaming protocol** — SSE, chunked JSON, or other? Determines `stream_response()` implementation. Resolved in Phase 0.
+4. **Conversation reuse** — can one `conv_id` accept multiple queries, or must each query start a new conversation? Affects latency. Resolved in Phase 2 testing.
