@@ -6,6 +6,16 @@ securely with DPAPI.
 
 ---
 
+## Principles
+
+**Separation of concerns** — auth, credential storage, HTTP transport, Grok API, and MCP tooling are separate modules. No cross-cutting logic.
+
+**Isolation of fragility** — the unofficial Grok web API is contained entirely in `client/endpoints.py`. When endpoints change, only that file updates. Nothing else knows about Grok's internal API shape.
+
+**Security** — credentials never in plaintext on disk. DPAPI ensures only the local user can decrypt. Auth tokens never logged or surfaced in tool output.
+
+---
+
 ## System Diagram
 
 ```
