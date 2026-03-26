@@ -16,6 +16,12 @@ securely with DPAPI.
 
 ---
 
+## Coding Hygiene
+
+Guard clauses. Graceful degradation. No silent failures. Explicit error types.
+
+---
+
 ## System Diagram
 
 ```
