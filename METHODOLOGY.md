@@ -6,7 +6,7 @@
 
 | Artifact | Purpose |
 |---|---|
-| `CLAUDE.md` | Session bootstrap — current phase, linked GitHub issue |
+| `CLAUDE.md` | Session bootstrap |
 | `IMPLEMENTATION.md` | Task state — checkboxes updated in place |
 | GitHub issue per phase | Failure record — comments capture attempts and decisions |
 | `docs/endpoints.md` | Phase 0 output — hard gate for Phase 2 |
@@ -34,6 +34,17 @@ No code is written against undiscovered endpoints.
 - **Issue comments** — everything else: failed attempts, decisions, partial findings, blockers.
 - **`docs/`** — structured discovery outputs. Committed, permanent, readable by any session.
 - **`CLAUDE.md`** — current phase pointer only. Updated when phase changes.
+
+---
+
+## TDD
+
+Tests are written before implementation code. Done means tests pass, not code written.
+
+- Test files mirror source structure: `tests/auth/`, `tests/client/`, `tests/tools/`
+- Each implementation task in Phases 1–3 is preceded by a test task in IMPLEMENTATION.md
+- Phase 0 (discovery) is exempt — no implementation code
+- `pytest` + `pytest-asyncio` as test runner
 
 ---
 
