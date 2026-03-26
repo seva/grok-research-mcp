@@ -1,7 +1,12 @@
+import asyncio
 import re
 from contextlib import asynccontextmanager
 
 import httpx
+
+_RETRY_MAX: int = 3
+_BACKOFF_INITIAL: float = 30.0
+_BACKOFF_MAX: float = 300.0
 
 _GROK_RENDER_TAG = re.compile(r"<grok:render[^>]*>.*?</grok:render>", re.DOTALL)
 
@@ -25,27 +30,37 @@ def _format_result(text: str, citations: list) -> str:
 
 
 async def _run_query(query: str, mode: str) -> str:
-    try:
-        async with _get_session() as session:
-            text = ""
-            citations = []
-            async for token, _, model_response in send_message(session, None, query, mode):
-                if token:
-                    text += token
-                if model_response:
-                    citations = parse_citations(model_response)
-                    canonical = model_response.get("message")
-                    if canonical:
-                        text = _GROK_RENDER_TAG.sub("", canonical)
-            return _format_result(text, citations)
-    except (AuthRequired, AuthExpired) as e:
-        return f"Error: Auth required. Run: python -m grok_research_mcp auth ({e})"
-    except AccessDenied as e:
-        return f"Error: Access denied — {e}"
-    except httpx.HTTPStatusError as e:
-        return f"Error: API returned {e.response.status_code}"
-    except httpx.NetworkError as e:
-        return f"Error: Network error — {e}"
+    attempt = 0
+    backoff = _BACKOFF_INITIAL
+    while True:
+        try:
+            async with _get_session() as session:
+                text = ""
+                citations = []
+                async for token, _, model_response in send_message(session, None, query, mode):
+                    if token:
+                        text += token
+                    if model_response:
+                        citations = parse_citations(model_response)
+                        canonical = model_response.get("message")
+                        if canonical:
+                            text = _GROK_RENDER_TAG.sub("", canonical)
+                return _format_result(text, citations)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 400 and attempt < _RETRY_MAX:
+                attempt += 1
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, _BACKOFF_MAX)
+                continue
+            if e.response.status_code == 400:
+                return "Error: Grok appears to be down (HTTP 400 after retries). Try again later."
+            return f"Error: API returned {e.response.status_code}"
+        except (AuthRequired, AuthExpired) as e:
+            return f"Error: Auth required. Run: python -m grok_research_mcp auth ({e})"
+        except AccessDenied as e:
+            return f"Error: Access denied — {e}"
+        except httpx.NetworkError as e:
+            return f"Error: Network error — {e}"
 
 
 async def grok_web_search(query: str) -> str:

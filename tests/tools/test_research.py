@@ -2,6 +2,7 @@ import pytest
 import httpx
 from unittest.mock import AsyncMock, patch, MagicMock
 
+import grok_research_mcp.tools.research as research_module
 from grok_research_mcp.tools.research import grok_web_search, grok_x_search, _format_result
 from grok_research_mcp.client.session import AccessDenied
 
@@ -190,3 +191,47 @@ async def test_run_query_returns_error_on_network_error():
 
     assert "Network error" in result
     assert "connection refused" in result
+
+
+# --- #20: HTTP 400 retry with exponential backoff ---
+
+@pytest.mark.asyncio
+async def test_run_query_retries_on_400_then_succeeds(mock_send):
+    call_count = 0
+
+    async def _fail_then_succeed(session, conv_id, text, mode, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 400
+            raise httpx.HTTPStatusError("Bad Request", request=MagicMock(), response=mock_resp)
+        async for item in mock_send(session, conv_id, text, mode):
+            yield item
+
+    with patch("grok_research_mcp.tools.research.send_message", _fail_then_succeed):
+        with patch("grok_research_mcp.tools.research._get_session") as mock_ctx:
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                _patched_session(mock_ctx)
+                result = await grok_web_search("test")
+
+    assert call_count == 2
+    assert "Paris is the capital of France." in result
+
+
+@pytest.mark.asyncio
+async def test_run_query_returns_down_message_after_exhausted_retries():
+    async def _always_400(*args, **kwargs):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 400
+        raise httpx.HTTPStatusError("Bad Request", request=MagicMock(), response=mock_resp)
+        yield  # make it an async generator
+
+    with patch("grok_research_mcp.tools.research.send_message", _always_400):
+        with patch("grok_research_mcp.tools.research._get_session") as mock_ctx:
+            with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+                _patched_session(mock_ctx)
+                result = await grok_web_search("test")
+
+    assert "down" in result.lower()
+    assert mock_sleep.call_count == 3  # _RETRY_MAX retries
