@@ -4,7 +4,7 @@ import sys
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python -m grok_research_mcp <auth|serve>")
+        print("Usage: python -m grok_research_mcp <auth|serve|query>")
         sys.exit(1)
 
     command = sys.argv[1]
@@ -21,6 +21,23 @@ def main():
     elif command == "serve":
         from grok_research_mcp.server import run
         run()
+
+    elif command == "query":
+        import argparse
+        parser = argparse.ArgumentParser(prog="python -m grok_research_mcp query")
+        parser.add_argument("--mode", choices=["web", "x"], default="web")
+        parser.add_argument("query_text", nargs="+")
+        args = parser.parse_args(sys.argv[2:])
+        query = " ".join(args.query_text)
+
+        from grok_research_mcp.tools.research import grok_web_search, grok_x_search
+        fn = grok_web_search if args.mode == "web" else grok_x_search
+        result = asyncio.run(fn(query))
+
+        if result.startswith("Error:"):
+            print(result, file=sys.stderr)
+            sys.exit(1)
+        print(result)
 
     else:
         print(f"Unknown command: {command}")
