@@ -62,6 +62,26 @@ No code is written against undiscovered endpoints.
 - **Issue comments** — everything else: failed attempts, decisions, partial findings, blockers.
 - **`docs/`** — structured discovery outputs. Committed, permanent, readable by any session.
 - **`CLAUDE.md`** — current phase pointer only. Updated when phase changes.
+- **`docs/walrus-YYYY-MM-DD.md`** — WaLRuS-DATA session summary. Written at session end, committed.
+
+---
+
+## WaLRuS-DATA
+
+At the end of any session with meaningful scope (phase completion, audit, significant fixes), write a `docs/walrus-YYYY-MM-DD.md` with the following sections:
+
+| Section | Content |
+|---|---|
+| **Wins** | What was completed and verified |
+| **Learnings** | Non-obvious discoveries — API quirks, SDK behaviours, wrong assumptions corrected |
+| **Risks** | Known latent issues, unverified assumptions, untested paths |
+| **Strategy** | Where the project goes next and why |
+| **Decisions** | Key choices made and their rationale |
+| **Alignment** | Standing rules the project is now operating under |
+| **Tradeoffs** | Accepted costs and why they were accepted |
+| **Alternatives** | Options considered and rejected |
+
+Keep entries concrete. No filler. Each line should be a fact a future session can act on.
 
 ---
 
