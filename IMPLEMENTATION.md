@@ -6,12 +6,9 @@
 
 Must complete before writing `client/endpoints.py`.
 
-- [ ] Read `mem0ai/grok3-api` source: extract current endpoint URLs, request shapes, response format
-- [ ] Read `EveripediaNetwork/grokit` source: cross-reference endpoints, cookie set, bearer token value
-- [ ] Capture a live browser session at `x.com/i/grok`: inspect Network tab for `send-message` request payload
-  — identify the parameter that activates web search mode vs. X search mode
-  — **requires user present at browser**: pause and wait for confirmation before proceeding
-- [ ] Record: base URL, conversation init endpoint, message endpoint, streaming protocol, all required headers
+- [x] Read `mem0ai/grok3-api` source: extract current endpoint URLs, request shapes, response format
+- [x] Read `EveripediaNetwork/grokit` source: cross-reference endpoints, cookie set, bearer token value
+- [x] Record: base URL, conversation init endpoint, message endpoint, streaming protocol, all required headers
 
 Outputs: annotated endpoint reference committed to `docs/endpoints.md`.
 
@@ -23,29 +20,30 @@ Outputs: annotated endpoint reference committed to `docs/endpoints.md`.
 
 ### Tasks
 
-- [ ] `pyproject.toml` — project scaffold: `mcp`, `playwright`, `httpx`, `pywin32`, `pytest`, `pytest-asyncio`
-- [ ] `tests/auth/test_store.py`
+- [x] `pyproject.toml` — project scaffold: `mcp`, `playwright`, `httpx`, `pywin32`, `pytest`, `pytest-asyncio`
+- [x] `tests/auth/test_store.py`
   - `save()` writes encrypted blob to expected path
   - `load()` round-trips: save then load returns original dict
   - `load()` raises `AuthRequired` when file missing
   - `is_expired()` returns True when `sso` expiry is in the past
   - `is_expired()` returns False when `sso` expiry is in the future
-- [ ] `auth/store.py`
+- [x] `auth/store.py`
   - `save(data: dict)`: JSON → bytes → `CryptProtectData(dwFlags=CRYPTPROTECT_LOCAL_MACHINE=False)` → write `~/.grok-mcp/auth.dpapi`
   - `load() -> dict`: read blob → `CryptUnprotectData` → JSON parse; raise `AuthRequired` if file missing
   - `is_expired() -> bool`: check `sso` cookie `expires` field vs. `time.time()`
-- [ ] `tests/auth/test_browser.py`
+- [x] `tests/auth/test_browser.py`
   - Cookie detection logic: given a cookie list, correctly identifies when `sso` + `sso-rw` are both present
-  - Bearer token extraction: correctly parses token from intercepted request header
-- [ ] `auth/browser.py`
+  - statsig ID extraction: correctly parses ID from localStorage snapshot
+- [x] `auth/browser.py`
   - Playwright async: launch Chromium headed
-  - Navigate to `x.com/i/grok`
+  - Navigate to `grok.com` (Phase 0: API is grok.com, not x.com/i/grok)
   - Poll `context.cookies()` every 2s; done when `sso` + `sso-rw` both present
-  - Capture: all target cookies + bearer token from `on_request` handler (intercept `api.x.com` calls)
-  - Return cookie dict; close browser
-- [ ] `__main__.py` auth subcommand: call browser → save → print confirmation
+  - Capture: all cookies + statsig_id from localStorage (Phase 0: no bearer token needed)
+  - Return data dict; close browser
+- [x] `__main__.py` auth subcommand: call browser → save → print confirmation
 
-**Verification:** `pytest tests/auth/` passes; run auth, confirm `~/.grok-mcp/auth.dpapi` written.
+**Verification:** `pytest tests/auth/` passes (11/11); `~/.grok-mcp/auth.dpapi` written with 84 cookies, sso+sso-rw present.
+Note: `statsig_id` null at auth time — captured fresh at request time in Phase 2.
 
 ---
 
@@ -56,25 +54,24 @@ Depends on Phase 0 discovery outputs.
 
 ### Tasks
 
-- [ ] `tests/client/test_endpoints.py`
-  - `new_conversation()` sends correct request shape; returns conv_id from mocked response
+- [x] `tests/client/test_endpoints.py`
+  - `send_message()` hits correct endpoint for new/existing conversation
   - `send_message()` includes correct mode parameter for `"web"`, `"x"`, `"none"`
-  - `send_message()` returns `AsyncIterator[str]`
-  - `parse_citations()` extracts title + url from known response fixture
-- [ ] `client/endpoints.py`
-  - `new_conversation(session) -> conv_id`
-  - `send_message(session, conv_id, text, mode: Literal["web", "x", "none"]) -> AsyncIterator[str]`
-  - `parse_citations(raw_response) -> list[dict]`
-  - Populate from `docs/endpoints.md`
-- [ ] `tests/client/test_session.py`
-  - `build_session()` injects cookies and bearer token into every request
+  - `send_message()` yields `(token, conv_id, model_response)` 3-tuple
+  - `parse_citations()` extracts title + url from webSearchResults fixture
+- [x] `client/endpoints.py`
+  - `send_message(session, conv_id, text, mode)` — conv_id=None → /conversations/new; else /conversations/{id}/responses
+  - `parse_citations(model_response: dict) -> list[dict]` — reads `webSearchResults`
+  - Note: no separate `new_conversation()` — conv_id returned in stream (Phase 0 gap resolved)
+- [x] `tests/client/test_session.py`
+  - `build_session()` injects cookies and statsig header into every request
   - `build_session()` raises `AuthExpired` on 401/403 response
-- [ ] `client/session.py`
-  - `build_session(auth: dict) -> httpx.AsyncClient`: inject cookies + `Authorization: Bearer <token>`
+- [x] `client/session.py`
+  - `build_session(auth: dict)` async context manager: inject cookies + required headers + x-statsig-id
   - On 401/403: raise `AuthExpired`
-- [ ] Manual integration test: send a known query in web search mode, print raw response
+- [x] Manual integration test: "Latest SpaceX news" → 45 citations, conv_id captured
 
-**Verification:** `pytest tests/client/` passes; query returns text + at least one citation.
+**Verification:** `pytest tests/client/` 13/13; live query returns text + 45 citations.
 
 ---
 
@@ -84,21 +81,21 @@ Depends on Phase 0 discovery outputs.
 
 ### Tasks
 
-- [ ] `tests/tools/test_research.py`
+- [x] `tests/tools/test_research.py`
   - `grok_web_search()` returns string containing response text and `Sources:` section
-  - `grok_x_search()` same
+  - `grok_x_search()` uses mode=x
   - Citation formatting: given parsed citations, output matches expected markdown
-- [ ] `tools/research.py`
+- [x] `tools/research.py`
   - `grok_web_search(query: str) -> str`: new conv → send (mode=web) → collect stream → format result with citations
   - `grok_x_search(query: str) -> str`: same, mode=x
   - Result format: `<response text>\n\nSources:\n- [title](url)\n...`
-- [ ] `server.py`
-  - MCP stdio server via `mcp` Python SDK
-  - On startup: `store.load()` — if `AuthRequired`, exit with message "Run: python -m grok_research_mcp auth"
-  - Register `grok_web_search` and `grok_x_search`
-- [ ] `__main__.py` serve subcommand: start MCP server
+- [x] `server.py`
+  - MCP stdio server via `FastMCP`
+  - On startup: `store.load()` — if `AuthRequired`, exit with message
+  - Registers `grok_web_search_tool` and `grok_x_search_tool`
+- [x] `__main__.py` serve subcommand: start MCP server
 
-**Verification:** `pytest tests/tools/` passes; connect an MCP client → call `grok_web_search("test")` → returns result.
+**Verification:** `pytest tests/` 28/28. MCP client connection pending.
 
 ---
 
@@ -106,9 +103,9 @@ Depends on Phase 0 discovery outputs.
 
 ### Tasks
 
-- [ ] `README.md`: install steps, auth setup, MCP client config examples (Claude Code, Cursor, Cline)
-- [ ] Error handling review: auth expiry UX, API shape changes, network errors
-- [ ] `uv` / `pip` install verified from clean environment
+- [x] `README.md`: install steps, auth setup, MCP client config examples (Claude Code, Cursor, Cline)
+- [x] Error handling review: auth expiry checked on startup; AuthExpired + NetworkError caught in tools layer
+- [x] `pip install -e .` verified from clean venv — all imports ok
 
 ---
 
