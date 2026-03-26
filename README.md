@@ -78,6 +78,22 @@ Re-run when your session expires.
 
 ## Requirements
 
-- Windows (DPAPI auth storage)
+- Windows 10/11 (see [Platform support](#platform-support) below)
 - Python 3.11+
 - Active Grok subscription
+
+## Platform support
+
+**Currently Windows-only.**
+
+Credentials are encrypted with [Windows DPAPI](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/) (`CryptProtectData` / `CryptUnprotectData`), which binds the encrypted blob to the current Windows user account. The dependency is isolated to `auth/store.py`.
+
+macOS and Linux are not supported yet. A cross-platform port would replace `pywin32` with a platform-appropriate secret store:
+
+| Platform | Replacement |
+|---|---|
+| macOS | `keyring` backed by Keychain, or direct `Security.framework` via `ctypes` |
+| Linux | `keyring` backed by libsecret / GNOME Keyring or KWallet |
+| All | `keyring` library as a unified abstraction (drops DPAPI entirely) |
+
+Tracked in: open a GitHub issue if this is blocking you.
