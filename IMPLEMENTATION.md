@@ -51,7 +51,7 @@ Outputs: annotated endpoint reference committed to `docs/endpoints.md`.
 
 ## Phase 2 — Grok Client
 
-**Goal:** `GrokClient` can send a message with web/X search mode and return streamed response.
+**Goal:** Grok client module can send a message with web/X search mode and return streamed response.
 Depends on Phase 0 discovery outputs.
 
 ### Tasks
@@ -59,6 +59,7 @@ Depends on Phase 0 discovery outputs.
 - [ ] `tests/client/test_endpoints.py`
   - `new_conversation()` sends correct request shape; returns conv_id from mocked response
   - `send_message()` includes correct mode parameter for `"web"`, `"x"`, `"none"`
+  - `send_message()` returns `AsyncIterator[str]`
   - `parse_citations()` extracts title + url from known response fixture
 - [ ] `client/endpoints.py`
   - `new_conversation(session) -> conv_id`
@@ -67,11 +68,10 @@ Depends on Phase 0 discovery outputs.
   - Populate from `docs/endpoints.md`
 - [ ] `tests/client/test_session.py`
   - `build_session()` injects cookies and bearer token into every request
-  - `with_auth_retry()` retries once on 401; does not retry on second 401
+  - `build_session()` raises `AuthExpired` on 401/403 response
 - [ ] `client/session.py`
   - `build_session(auth: dict) -> httpx.AsyncClient`: inject cookies + `Authorization: Bearer <token>`
-  - `with_auth_retry(fn)`: decorator — on 401/403, call `store.load()`, check `is_expired()`,
-    re-auth if needed, rebuild session, retry once
+  - On 401/403: raise `AuthExpired`
 - [ ] Manual integration test: send a known query in web search mode, print raw response
 
 **Verification:** `pytest tests/client/` passes; query returns text + at least one citation.

@@ -49,12 +49,13 @@ user-scoped). Writes opaque blob to `~/.grok-mcp/auth.dpapi`.
 
 ### `client/session.py`
 `httpx` async session with cookies + bearer token injected on every request.
-On 401/403: calls `store.load()`, checks expiry, triggers re-auth if needed.
+On 401/403: raises `AuthExpired`. Caller is responsible for handling it.
 
 ### `client/endpoints.py`
-Grok web API calls: `new_conversation()`, `send_message(conv_id, text, options)`,
-`stream_response()`. Research mode (web search / X search) is activated via options
-in the `send_message` payload — exact parameter names resolved during Phase 2 discovery.
+Grok web API calls: `new_conversation()`, `send_message(conv_id, text, options) -> AsyncIterator[str]`.
+Streaming is the return value of `send_message()` — no separate `stream_response()`.
+Research mode (web search / X search) is activated via options in the `send_message` payload
+— exact parameter names resolved during Phase 0 discovery.
 
 ### `tools/research.py`
 Implements MCP tools:
@@ -81,7 +82,8 @@ Subsequent runs:
                                 → yes → re-trigger browser flow
 
 Mid-session expiry:
-  send_message() → 401 → session.py → store.is_expired() → re-auth
+  send_message() → 401 → session.py raises AuthExpired
+                       → tool returns error: "Auth expired. Run: python -m grok_research_mcp auth"
 ```
 
 ---
@@ -91,8 +93,8 @@ Mid-session expiry:
 ```
 MCP client: tool call grok_web_search("query")
   → research.py: new_conversation() → conv_id
-  → send_message(conv_id, query, mode=web_search)
-  → stream_response() → collect text + citations
+  → send_message(conv_id, query, mode=web_search) → AsyncIterator[str]
+  → collect text + citations from stream
   → return formatted result to MCP client
 ```
 
