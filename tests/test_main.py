@@ -15,7 +15,7 @@ def test_no_args_usage_includes_query():
 
 
 def test_query_routes_to_web_search_by_default():
-    async def _mock_web(q):
+    async def _mock_web(q, **kwargs):
         return f"web:{q}"
 
     with patch("sys.argv", ["grok_research_mcp", "query", "test", "query"]):
@@ -27,7 +27,7 @@ def test_query_routes_to_web_search_by_default():
 
 
 def test_query_mode_x_routes_to_x_search():
-    async def _mock_x(q):
+    async def _mock_x(q, **kwargs):
         return f"x:{q}"
 
     with patch("sys.argv", ["grok_research_mcp", "query", "--mode", "x", "xai news"]):
@@ -39,7 +39,7 @@ def test_query_mode_x_routes_to_x_search():
 
 
 def test_query_error_result_goes_to_stderr_and_exits_1():
-    async def _mock_error(q):
+    async def _mock_error(q, **kwargs):
         return "Error: Auth required. Run: python -m grok_research_mcp auth"
 
     with patch("sys.argv", ["grok_research_mcp", "query", "test"]):

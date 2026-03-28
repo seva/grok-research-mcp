@@ -10,7 +10,7 @@ _TOOL_OVERRIDES = {
 }
 
 
-def _payload(text: str, mode: Literal["web", "x", "none"], response_id: Optional[str] = None) -> dict:
+def _payload(text: str, mode: Literal["web", "x", "none"], response_id: Optional[str] = None, is_reasoning: bool = False) -> dict:
     p = {
         "temporary": False,
         "modelName": "grok-3",
@@ -28,7 +28,7 @@ def _payload(text: str, mode: Literal["web", "x", "none"], response_id: Optional
         "enableSideBySide": True,
         "sendFinalMetadata": True,
         "isPreset": False,
-        "isReasoning": False,
+        "isReasoning": is_reasoning,
         "disableTextFollowUps": True,
         "customInstructions": "",
         "deepsearch preset": "",
@@ -47,13 +47,14 @@ async def send_message(
     text: str,
     mode: Literal["web", "x", "none"],
     response_id: Optional[str] = None,
+    is_reasoning: bool = False,
 ) -> AsyncIterator[Tuple[Optional[str], Optional[str], Optional[Any]]]:
     if conv_id:
         url = f"{BASE_URL}/conversations/{conv_id}/responses"
     else:
         url = f"{BASE_URL}/conversations/new"
 
-    payload = _payload(text, mode, response_id)
+    payload = _payload(text, mode, response_id, is_reasoning)
 
     async with session.stream("POST", url, json=payload) as resp:
         resp.raise_for_status()

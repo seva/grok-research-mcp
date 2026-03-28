@@ -9,15 +9,17 @@ mcp = FastMCP("grok-research")
 
 
 @mcp.tool()
-async def grok_web_search_tool(query: str) -> str:
-    """Search the web using Grok and return the response with sources."""
-    return await grok_web_search(query)
+async def grok_web_search_tool(query: str, is_reasoning: bool = False) -> str:
+    """Search the web using Grok and return the response with sources.
+    Set is_reasoning=True to enable step-by-step thinking mode (slower, more thorough)."""
+    return await grok_web_search(query, is_reasoning)
 
 
 @mcp.tool()
-async def grok_x_search_tool(query: str) -> str:
-    """Search X (Twitter) posts using Grok and return the response with sources."""
-    return await grok_x_search(query)
+async def grok_x_search_tool(query: str, is_reasoning: bool = False) -> str:
+    """Search X (Twitter) posts using Grok and return the response with sources.
+    Set is_reasoning=True to enable step-by-step thinking mode (slower, more thorough)."""
+    return await grok_x_search(query, is_reasoning)
 
 
 def run():

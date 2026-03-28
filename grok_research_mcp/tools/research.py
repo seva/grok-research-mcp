@@ -35,7 +35,7 @@ def _format_result(text: str, citations: list) -> str:
     return f"{text}\n\nSources:\n{sources}"
 
 
-async def _run_query(query: str, mode: str) -> str:
+async def _run_query(query: str, mode: str, is_reasoning: bool = False) -> str:
     global _last_query_time
     now = time.monotonic()
     if _last_query_time > 0:
@@ -52,7 +52,7 @@ async def _run_query(query: str, mode: str) -> str:
             async with _get_session() as session:
                 text = ""
                 citations = []
-                async for token, _, model_response in send_message(session, None, query, mode):
+                async for token, _, model_response in send_message(session, None, query, mode, is_reasoning=is_reasoning):
                     if token:
                         text += token
                     if model_response:
@@ -78,9 +78,9 @@ async def _run_query(query: str, mode: str) -> str:
             return f"Error: Network error — {e}"
 
 
-async def grok_web_search(query: str) -> str:
-    return await _run_query(query, "web")
+async def grok_web_search(query: str, is_reasoning: bool = False) -> str:
+    return await _run_query(query, "web", is_reasoning)
 
 
-async def grok_x_search(query: str) -> str:
-    return await _run_query(query, "x")
+async def grok_x_search(query: str, is_reasoning: bool = False) -> str:
+    return await _run_query(query, "x", is_reasoning)

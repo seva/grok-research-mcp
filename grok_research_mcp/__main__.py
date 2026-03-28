@@ -26,13 +26,14 @@ def main():
         import argparse
         parser = argparse.ArgumentParser(prog="python -m grok_research_mcp query")
         parser.add_argument("--mode", choices=["web", "x"], default="web")
+        parser.add_argument("--reasoning", action="store_true", default=False)
         parser.add_argument("query_text", nargs="+")
         args = parser.parse_args(sys.argv[2:])
         query = " ".join(args.query_text)
 
         from grok_research_mcp.tools.research import grok_web_search, grok_x_search
         fn = grok_web_search if args.mode == "web" else grok_x_search
-        result = asyncio.run(fn(query))
+        result = asyncio.run(fn(query, is_reasoning=args.reasoning))
 
         if result.startswith("Error:"):
             print(result, file=sys.stderr)

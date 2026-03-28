@@ -132,6 +132,24 @@ async def test_send_message_no_parent_response_id_when_none(mock_session):
     assert "parentResponseId" not in payload
 
 
+# --- #22: isReasoning parameter ---
+
+@pytest.mark.asyncio
+async def test_send_message_is_reasoning_false_by_default(mock_session):
+    async for _t, _c, _m in send_message(mock_session, None, "hi", "web"):
+        pass
+    payload = mock_session.stream.call_args[1]["json"]
+    assert payload["isReasoning"] is False
+
+
+@pytest.mark.asyncio
+async def test_send_message_is_reasoning_true_when_set(mock_session):
+    async for _t, _c, _m in send_message(mock_session, None, "hi", "web", is_reasoning=True):
+        pass
+    payload = mock_session.stream.call_args[1]["json"]
+    assert payload["isReasoning"] is True
+
+
 # --- parse_citations ---
 
 def test_parse_citations_extracts_web_search_results():

@@ -127,7 +127,7 @@ async def test_grok_web_search_uses_model_response_message(mock_send_with_canoni
 async def test_grok_x_search_uses_x_mode(mock_send):
     calls = []
 
-    async def _capturing_send(session, conv_id, text, mode):
+    async def _capturing_send(session, conv_id, text, mode, **kwargs):
         calls.append(mode)
         async for item in mock_send(session, conv_id, text, mode):
             yield item
@@ -191,6 +191,42 @@ async def test_run_query_returns_error_on_network_error():
 
     assert "Network error" in result
     assert "connection refused" in result
+
+
+# --- #22: is_reasoning parameter ---
+
+@pytest.mark.asyncio
+async def test_grok_web_search_passes_is_reasoning_true(mock_send):
+    captured = {}
+
+    async def _capturing(session, conv_id, text, mode, **kwargs):
+        captured.update(kwargs)
+        async for item in mock_send(session, conv_id, text, mode):
+            yield item
+
+    with patch("grok_research_mcp.tools.research.send_message", _capturing):
+        with patch("grok_research_mcp.tools.research._get_session") as mock_ctx:
+            _patched_session(mock_ctx)
+            await grok_web_search("test", is_reasoning=True)
+
+    assert captured.get("is_reasoning") is True
+
+
+@pytest.mark.asyncio
+async def test_grok_web_search_is_reasoning_false_by_default(mock_send):
+    captured = {}
+
+    async def _capturing(session, conv_id, text, mode, **kwargs):
+        captured.update(kwargs)
+        async for item in mock_send(session, conv_id, text, mode):
+            yield item
+
+    with patch("grok_research_mcp.tools.research.send_message", _capturing):
+        with patch("grok_research_mcp.tools.research._get_session") as mock_ctx:
+            _patched_session(mock_ctx)
+            await grok_web_search("test")
+
+    assert captured.get("is_reasoning") is False
 
 
 # --- #19: per-query jitter delay ---
