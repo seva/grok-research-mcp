@@ -71,7 +71,7 @@ Re-run when your session expires.
 
 ## OpenClaw / exec-based agents
 
-For agents that use the exec tool (e.g. VixeYult), use the `query` subcommand directly — no MCP client support needed.
+For agents that use the exec tool, use the `query` subcommand directly — no MCP client support needed.
 
 ### Prerequisites
 
