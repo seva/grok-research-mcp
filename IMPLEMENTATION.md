@@ -137,6 +137,39 @@ playwright install chromium
 
 ---
 
+## Phase 5 — Post-Release Fixes and Enhancements
+
+### Audit fixes (commit `80ae163`)
+- [x] `auth/store.py` — removed mkdir side effect from `_auth_path()`; `load()` wraps decrypt in try/except → `AuthRequired`; `is_expired()` checks both `sso` and `sso-rw`
+- [x] `client/session.py` — distinguished 401 (`AuthExpired`) from 403 (`AccessDenied`); added `httpx.Timeout(120.0, connect=10.0)`
+- [x] `client/endpoints.py` — fixed `_payload` signature; `parentResponseId` included when `response_id` set
+- [x] `tools/research.py` — `modelResponse.message` as canonical text; `AccessDenied` handled; `grok:render` tags stripped (Closes #18)
+
+### #19 — Anti-bot: human request patterns
+- [x] `tests/client/test_session.py` — tests for `Accept-Language`, `sec-ch-ua*`, `DNT` headers
+- [x] `tests/tools/test_research.py` — jitter delay tests (first call undelayed; consecutive calls sleep)
+- [x] `client/session.py` — enriched Chrome fingerprint headers; `_CHROME_VERSION` constant
+- [x] `tools/research.py` — per-query jitter (2–8s, applied between consecutive calls only)
+
+### #20 — HTTP 400 retry with exponential backoff
+- [x] `tests/tools/test_research.py` — retry-then-succeed and exhausted-retry tests
+- [x] `tools/research.py` — retry loop: 3× max, 30s/60s/120s backoff, "Grok appears to be down" on exhaustion
+
+### #21 — `query` CLI subcommand
+- [x] `tests/test_main.py` — routing, mode, error exit, subprocess auth-missing tests
+- [x] `__main__.py` — `query [--mode web|x] [--reasoning] QUERY...` subcommand; exit 0/1 contract
+
+### #22 — `isReasoning` as tool parameter
+- [x] `tests/client/test_endpoints.py` — payload tests for `is_reasoning` true/false
+- [x] `tests/tools/test_research.py` — threading tests through `_run_query`
+- [x] `client/endpoints.py` — `_payload` and `send_message` accept `is_reasoning: bool = False`
+- [x] `tools/research.py` — `grok_web_search` and `grok_x_search` expose `is_reasoning`
+- [x] `server.py` — MCP tools expose `is_reasoning` with description
+
+**Verification:** `pytest tests/` 58/58. Integration confirmed by external Claude Code session.
+
+---
+
 ## Open Questions
 
 1. **Research mode parameter** — exact field name + value in `send_message` payload that activates web vs. X search. Resolved in Phase 0.
