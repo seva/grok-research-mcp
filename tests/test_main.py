@@ -52,6 +52,33 @@ def test_query_error_result_goes_to_stderr_and_exits_1():
     assert "Error:" in mock_err.getvalue()
 
 
+def test_query_reasoning_flag_passed_through():
+    captured = {}
+
+    async def _mock_web(q, **kwargs):
+        captured.update(kwargs)
+        return "result"
+
+    with patch("sys.argv", ["grok_research_mcp", "query", "--reasoning", "test"]):
+        with patch("grok_research_mcp.tools.research.grok_web_search", _mock_web):
+            with patch("sys.stdout", new_callable=StringIO):
+                main()
+
+    assert captured.get("is_reasoning") is True
+
+
+def test_query_unicode_output_does_not_crash():
+    async def _mock_web(q, **kwargs):
+        return "result with emoji 😊 and unicode — café"
+
+    with patch("sys.argv", ["grok_research_mcp", "query", "test"]):
+        with patch("grok_research_mcp.tools.research.grok_web_search", _mock_web):
+            with patch("sys.stdout", new_callable=StringIO) as mock_out:
+                main()
+
+    assert "😊" in mock_out.getvalue()
+
+
 def test_query_auth_missing_exits_1_via_subprocess(tmp_path):
     result = subprocess.run(
         [sys.executable, "-m", "grok_research_mcp", "query", "test"],

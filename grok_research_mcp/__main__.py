@@ -38,6 +38,8 @@ def main():
         if result.startswith("Error:"):
             print(result, file=sys.stderr)
             sys.exit(1)
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8")
         print(result)
 
     else:
