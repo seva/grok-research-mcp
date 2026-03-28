@@ -69,6 +69,43 @@ Re-run when your session expires.
 }
 ```
 
+## OpenClaw / exec-based agents
+
+For agents that use the exec tool (e.g. VixeYult), use the `query` subcommand directly — no MCP client support needed.
+
+### Prerequisites
+
+Auth must be set up once on the same machine the agent runs on:
+
+```
+python -m grok_research_mcp auth
+```
+
+### Usage
+
+```powershell
+python -m grok_research_mcp query "current state of LLM agent memory architectures"
+python -m grok_research_mcp query --mode x "xAI Grok outage"
+```
+
+- Exit 0 — result on stdout
+- Exit 1 — error message on stderr (auth expired, network failure, Grok down)
+
+### openclaw.json
+
+Exec must be enabled with `ask: off` for unattended use. If `python` is not in the gateway's PATH, add it via `pathPrepend`:
+
+```json5
+"tools": {
+  "exec": {
+    "host": "gateway",
+    "security": "full",
+    "ask": "off",
+    "pathPrepend": ["C:/Users/<you>/AppData/Local/Programs/Python/Python311"]
+  }
+}
+```
+
 ## Tools
 
 | Tool | Description |
