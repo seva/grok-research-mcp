@@ -166,7 +166,15 @@ playwright install chromium
 - [x] `tools/research.py` — `grok_web_search` and `grok_x_search` expose `is_reasoning`
 - [x] `server.py` — MCP tools expose `is_reasoning` with description
 
-**Verification:** `pytest tests/` 58/58. Integration confirmed by external Claude Code session.
+**Verification:** `pytest tests/` 60/60. Integration confirmed by external Claude Code session.
+
+### Coverage Notes
+
+| Module | Coverage | Classification | Reason |
+|---|---|---|---|
+| `server.py` | ~48% | Acceptable | `run()` body tested via subprocess; subprocess output doesn't feed `coverage` |
+| `auth/browser.py` | ~63% | Acceptable | Playwright paths require a real headed browser — not unit-testable |
+| `__main__.py` | ~70% | Acceptable | `auth` and `serve` subcommands require browser/stdio — not unit-testable |
 
 ---
 

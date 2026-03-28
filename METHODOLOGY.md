@@ -96,6 +96,19 @@ Tests are written before implementation code. Done means tests pass, not code wr
 
 ---
 
+## Coverage
+
+Coverage is a diagnostic, not a target. No numeric threshold is enforced.
+
+After any phase completion or significant feature, review uncovered lines (`pytest --cov`). Each uncovered line is either:
+
+- **Acceptable** — document why: untestable path (browser launch, stdio transport, subprocess-tested code). Known acceptable gaps live in `## Coverage Notes` in the relevant phase of IMPLEMENTATION.md.
+- **A gap** — file a GH issue or add a test. Don't leave it undocumented.
+
+Do not write tests to raise a coverage number. Write tests to verify behavior. Coverage follows from that.
+
+---
+
 ## What's Excluded and Why
 
 - **MCP memory** — not agent-agnostic, has availability precedent, not auditable.
