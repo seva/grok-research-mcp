@@ -10,13 +10,18 @@ def main():
     command = sys.argv[1]
 
     if command == "auth":
+        import sys as _sys
         from grok_research_mcp.auth.browser import capture
-        from grok_research_mcp.auth.store import save, _auth_path
+        from grok_research_mcp.auth.store import save
 
         print("Opening browser — log in to grok.com, then close or wait...")
         data = asyncio.run(capture())
         save(data)
-        print(f"Auth saved to {_auth_path()}")
+        if _sys.platform == "win32":
+            from grok_research_mcp.auth.store_win32 import _auth_path
+            print(f"Auth saved to {_auth_path()}")
+        else:
+            print("Auth saved to Keychain (grok-research-mcp)")
 
     elif command == "serve":
         from grok_research_mcp.server import run
