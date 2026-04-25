@@ -113,6 +113,10 @@ Exec must be enabled with `ask: off` for unattended use. If `python` is not in t
 | `grok_web_search_tool` | Searches the web via Grok. Returns response text + sources. |
 | `grok_x_search_tool` | Searches X posts via Grok. Returns response text + sources. |
 
+## Terms of Use
+
+This tool is intended for personal research use by individuals with an active Grok subscription. See [TERMS.md](TERMS.md).
+
 ## Requirements
 
 - Windows 10/11 (see [Platform support](#platform-support) below)
