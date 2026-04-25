@@ -178,6 +178,30 @@ playwright install chromium
 
 ---
 
+## Phase 6 — Cross-platform credential storage (#17, macOS scope)
+
+**Goal:** `auth/store.py` works on macOS via `keyring` (Keychain). Windows DPAPI path unchanged. `pywin32` becomes Windows-only optional dep.
+
+### Tasks
+
+- [x] `tests/auth/test_store.py` — add macOS keyring path tests (mock `keyring`):
+  - `save()` calls `keyring.set_password` with correct service/username and JSON payload
+  - `load()` calls `keyring.get_password`; returns parsed dict on hit
+  - `load()` raises `AuthRequired` when `keyring.get_password` returns `None`
+  - `load()` raises `AuthRequired` on corrupt/non-JSON value
+- [x] `auth/store.py` — platform-aware dispatch:
+  - `sys.platform == "win32"` → existing DPAPI path (unchanged)
+  - otherwise → `keyring.set_password` / `keyring.get_password` with `service="grok-research-mcp"`, `username="auth"`
+  - JSON stored as string; `load()` parses and returns dict
+- [x] `pyproject.toml`:
+  - add `keyring>=24.0` to `dependencies`
+  - move `pywin32>=306` to `[project.optional-dependencies]` under `windows`
+  - add install note to README
+
+**Verification:** `pytest tests/auth/` passes on macOS. Windows behaviour untouched (DPAPI branch not exercised on macOS).
+
+---
+
 ## Open Questions
 
 1. **Research mode parameter** — exact field name + value in `send_message` payload that activates web vs. X search. Resolved in Phase 0.
