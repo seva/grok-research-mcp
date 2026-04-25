@@ -1,6 +1,6 @@
 # grok-research-mcp
 
-MCP server exposing Grok web and X search to any MCP client. Uses your existing Grok session via cookie auth + DPAPI encryption.
+MCP server exposing Grok web and X search to any MCP client. Uses your existing Grok session via cookie auth + platform keychain.
 
 ## Install
 
@@ -24,7 +24,7 @@ Run once. Opens a Chrome window to `grok.com/sign-in` — log in, then wait for 
 python -m grok_research_mcp auth
 ```
 
-Credentials are stored encrypted at `~/.grok-mcp/auth.dpapi` (Windows DPAPI, current user only).
+Credentials are stored in the platform keychain (macOS Keychain or Windows DPAPI), bound to the current user.
 
 Re-run when your session expires.
 
@@ -83,7 +83,7 @@ python -m grok_research_mcp auth
 
 ### Usage
 
-```powershell
+```
 python -m grok_research_mcp query "current state of LLM agent memory architectures"
 python -m grok_research_mcp query --mode x "xAI Grok outage"
 ```
@@ -119,22 +119,14 @@ This tool is intended for personal research use by individuals with an active Gr
 
 ## Requirements
 
-- Windows 10/11 (see [Platform support](#platform-support) below)
+- Windows 10/11 or macOS
 - Python 3.11+
 - Active Grok subscription
 
 ## Platform support
 
-**Currently Windows-only.**
-
-Credentials are encrypted with [Windows DPAPI](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/) (`CryptProtectData` / `CryptUnprotectData`), which binds the encrypted blob to the current Windows user account. The dependency is isolated to `auth/store.py`.
-
-macOS and Linux are not supported yet. A cross-platform port would replace `pywin32` with a platform-appropriate secret store:
-
-| Platform | Replacement |
+| Platform | Credential storage |
 |---|---|
-| macOS | `keyring` backed by Keychain, or direct `Security.framework` via `ctypes` |
-| Linux | `keyring` backed by libsecret / GNOME Keyring or KWallet |
-| All | `keyring` library as a unified abstraction (drops DPAPI entirely) |
-
-Tracked in: open a GitHub issue if this is blocking you.
+| macOS | Keychain via `keyring` |
+| Windows | DPAPI (`CryptProtectData` / `CryptUnprotectData`) |
+| Linux | Not yet supported |
