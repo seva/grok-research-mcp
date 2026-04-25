@@ -198,7 +198,14 @@ playwright install chromium
   - move `pywin32>=306` to `[project.optional-dependencies]` under `windows`
   - add install note to README
 
-**Verification:** `pytest tests/auth/` passes on macOS. Windows behaviour untouched (DPAPI branch not exercised on macOS).
+**Verification:** `pytest tests/` 60 passed, 4 skipped (Windows DPAPI tests skipped on macOS). Full suite clean. Integration confirmed: OpenCode session with live Keychain auth.
+
+### Coverage Notes
+
+| Module | Coverage | Classification | Reason |
+|---|---|---|---|
+| `auth/store_win32.py` | 0% on macOS | Acceptable | Windows-only DPAPI branch; not executable on macOS. Covered on Windows by the 4 skipped tests. |
+| `auth/store.py` | ~71% | Acceptable | Win32 branch (line 4) not reachable on macOS. |
 
 ---
 
