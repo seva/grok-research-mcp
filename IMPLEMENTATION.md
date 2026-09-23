@@ -230,10 +230,10 @@ playwright install chromium
 - [x] `tests/tools/test_research.py`
   - lock-held-during-flight (independent probe with `timeout=0` fails to acquire mid-query, succeeds after)
   - concurrent-calls-serialize (two `gather`ed queries execute enter→exit→enter→exit; patches applied once outside `gather` — per-coroutine patching clobbers the shared module global when the first context exits)
-- [ ] #25 — 400-retry backoff sleeps while holding the global lock (retry loop must release/re-acquire per attempt)
-- [ ] #26 — record 429 no-retry rationale (retry-with-Retry-After vs wontfix-by-design)
+- [x] #25 — 400-retry backoff sleeps while holding the global lock (retry loop moved outside the file lock: `_run_query` holds `_query_lock` across the query, acquires `_acquire_file_lock()` per attempt, sleeps backoff unlocked; test-first: backoff-probe test failed red, then green)
+- [x] #26 — record 429 no-retry rationale (Owner ruling: retry dismissed; preventive jitter+serialization only — closed)
 
-**Verification:** `pytest tests/` 63 passed, 4 skipped (Windows DPAPI tests skipped on macOS; macOS keyring tests skipped on Windows).
+**Verification:** `pytest tests/` 64 passed, 4 skipped (Windows DPAPI tests skipped on macOS; macOS keyring tests skipped on Windows).
 
 ### Coverage Notes
 

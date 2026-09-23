@@ -122,14 +122,16 @@ Implements MCP tools:
 - `grok_x_search(query: str, is_reasoning: bool = False) -> str` — X search, returns text + citations
 
 Serialization (two layers — each MCP client spawns its own server process):
-- in-process `_query_lock = asyncio.Lock()` (intra-process fast path)
+- in-process `_query_lock = asyncio.Lock()` (intra-process fast path, held across the whole query including backoff sleeps)
 - cross-process `~/.grok-mcp/query.lock` via `filelock` — fresh instance per query,
   `timeout=-1`, `thread_local=False` (mandatory: acquire/release run on different
   thread-pool workers via `asyncio.to_thread`; thread-local state would make release
-  a silent no-op), held across the full query body (variant b — body stays async).
+  a silent no-op), acquired per attempt: `_run_query` holds `_query_lock`, runs
+  `_single_attempt` under the file lock, sleeps 400-backoff unlocked, re-acquires
+  for the next attempt (#25).
 
 Applies per-query jitter delay (2–8s) between consecutive calls. Retries on HTTP 400 with exponential backoff (up to 3×, 30s/60s/120s).
-HTTP 429 is NOT retried — Owner decision (#26): a 429 means stop sending, and re-firing into it is the opposite of the correct response. Protection is preventive only (jitter + global serialization). No reactive cross-process cooldown exists: after a 429 the next query may fire after normal jitter.
+HTTP 429 is NOT retried — Owner decision (#26, closed): a 429 means stop sending, and re-firing into it is the opposite of the correct response. Protection is preventive only (jitter + global serialization). No reactive cross-process cooldown exists.
 Known flaw: the 400-retry backoff sleeps while holding the global lock (#25).
 
 ### `__main__.py`
@@ -171,15 +173,17 @@ Mid-session expiry:
 
 ```
 MCP client: tool call grok_web_search("query")
-  → research.py: acquire in-process lock + cross-process file lock (blocks until previous query finishes)
+  → research.py: acquire in-process lock (held for the whole query)
   → [jitter delay if not first call]
+  → per attempt: acquire file lock → single attempt → release lock
+  → [on retryable HTTP 400: backoff sleep UNLOCKED, re-acquire for next attempt]
   → send_message(session, conv_id=None, query, mode="web") → AsyncIterator
       stream yields: tokens → conv_id → model_response (citations)
   → strip grok:render tags from canonical message
   → format text + citations
-  → release locks → return to MCP client
-  [on HTTP 400: retry up to 3× with backoff before returning error — backoff sleeps hold the locks (#25)]
-  [on HTTP 429: no retry, error returned immediately (#26)]
+  → release in-process lock → return to MCP client
+  [on HTTP 400: retry up to 3× with unlocked backoff before returning error]
+  [on HTTP 429: no retry, error returned immediately (#26, closed)]
 ```
 
 ---

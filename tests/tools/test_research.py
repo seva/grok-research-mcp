@@ -322,6 +322,45 @@ async def test_run_query_retries_on_400_then_succeeds(mock_send):
 
 
 @pytest.mark.asyncio
+async def test_run_query_releases_file_lock_during_backoff(mock_send, tmp_path):
+    """#25: backoff sleep between 400-retries must not hold the cross-process lock."""
+    import asyncio
+    lock_path = str(tmp_path / "query.lock")
+    call_count = 0
+    lock_free_during_backoff = {}
+
+    async def _fail_once(session, conv_id, text, mode, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 400
+            raise httpx.HTTPStatusError("Bad Request", request=MagicMock(), response=mock_resp)
+        async for item in mock_send(session, conv_id, text, mode):
+            yield item
+
+    async def _probing_sleep(delay):
+        probe = FileLock(lock_path, timeout=0)
+        try:
+            probe.acquire()
+            lock_free_during_backoff["free"] = True
+            probe.release()
+        except Timeout:
+            lock_free_during_backoff["free"] = False
+
+    with patch("grok_research_mcp.tools.research.send_message", _fail_once):
+        with patch("grok_research_mcp.tools.research._get_session") as mock_ctx:
+            with patch("grok_research_mcp.tools.research._query_file_lock_path", lock_path):
+                with patch("asyncio.sleep", _probing_sleep):
+                    _patched_session(mock_ctx)
+                    result = await grok_web_search("test")
+
+    assert call_count == 2
+    assert "Paris is the capital of France." in result
+    assert lock_free_during_backoff.get("free") is True
+
+
+@pytest.mark.asyncio
 async def test_run_query_returns_down_message_after_exhausted_retries():
     async def _always_400(*args, **kwargs):
         mock_resp = MagicMock()

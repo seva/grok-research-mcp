@@ -52,11 +52,21 @@ async def _acquire_file_lock():
 
 
 async def _run_query(query: str, mode: str, is_reasoning: bool = False) -> str:
-    async with _query_lock, _acquire_file_lock():
-        return await _run_query_locked(query, mode, is_reasoning)
+    async with _query_lock:
+        await _apply_jitter()
+        attempt = 0
+        backoff = _BACKOFF_INITIAL
+        while True:
+            async with _acquire_file_lock():
+                result, retryable = await _single_attempt(query, mode, is_reasoning, attempt)
+            if not retryable:
+                return result
+            attempt += 1
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, _BACKOFF_MAX)
 
 
-async def _run_query_locked(query: str, mode: str, is_reasoning: bool = False) -> str:
+async def _apply_jitter() -> None:
     global _last_query_time
     now = time.monotonic()
     if _last_query_time > 0:
@@ -66,37 +76,35 @@ async def _run_query_locked(query: str, mode: str, is_reasoning: bool = False) -
             await asyncio.sleep(jitter - elapsed)
     _last_query_time = time.monotonic()
 
-    attempt = 0
-    backoff = _BACKOFF_INITIAL
-    while True:
-        try:
-            async with _get_session() as session:
-                text = ""
-                citations = []
-                async for token, _, model_response in send_message(session, None, query, mode, is_reasoning=is_reasoning):
-                    if token:
-                        text += token
-                    if model_response:
-                        citations = parse_citations(model_response)
-                        canonical = model_response.get("message")
-                        if canonical:
-                            text = _GROK_RENDER_TAG.sub("", canonical)
-                return _format_result(text, citations)
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 400 and attempt < _RETRY_MAX:
-                attempt += 1
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, _BACKOFF_MAX)
-                continue
-            if e.response.status_code == 400:
-                return "Error: Grok appears to be down (HTTP 400 after retries). Try again later."
-            return f"Error: API returned {e.response.status_code}"
-        except (AuthRequired, AuthExpired) as e:
-            return f"Error: Auth required. Run: python -m grok_research_mcp auth ({e})"
-        except AccessDenied as e:
-            return f"Error: Access denied — {e}"
-        except httpx.NetworkError as e:
-            return f"Error: Network error — {e}"
+
+async def _single_attempt(query: str, mode: str, is_reasoning: bool, attempt: int) -> tuple[str | None, bool]:
+    """One locked attempt. Returns (result, retryable): retryable is True only for
+    HTTP 400 with retries remaining — the backoff sleep happens outside the lock (#25)."""
+    try:
+        async with _get_session() as session:
+            text = ""
+            citations = []
+            async for token, _, model_response in send_message(session, None, query, mode, is_reasoning=is_reasoning):
+                if token:
+                    text += token
+                if model_response:
+                    citations = parse_citations(model_response)
+                    canonical = model_response.get("message")
+                    if canonical:
+                        text = _GROK_RENDER_TAG.sub("", canonical)
+            return _format_result(text, citations), False
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 400 and attempt < _RETRY_MAX:
+            return None, True
+        if e.response.status_code == 400:
+            return "Error: Grok appears to be down (HTTP 400 after retries). Try again later.", False
+        return f"Error: API returned {e.response.status_code}", False
+    except (AuthRequired, AuthExpired) as e:
+        return f"Error: Auth required. Run: python -m grok_research_mcp auth ({e})", False
+    except AccessDenied as e:
+        return f"Error: Access denied — {e}", False
+    except httpx.NetworkError as e:
+        return f"Error: Network error — {e}", False
 
 
 async def grok_web_search(query: str, is_reasoning: bool = False) -> str:
