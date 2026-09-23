@@ -233,15 +233,16 @@ playwright install chromium
 - [x] #25 — 400-retry backoff sleeps while holding the global lock (retry loop moved outside the file lock: `_run_query` holds `_query_lock` across the query, acquires `_acquire_file_lock()` per attempt, sleeps backoff unlocked; test-first: backoff-probe test failed red, then green)
 - [x] #26 — record 429 no-retry rationale (Owner ruling: retry dismissed; preventive jitter+serialization only — closed)
 
-**Verification:** `pytest tests/` 64 passed, 4 skipped (Windows DPAPI tests skipped on macOS; macOS keyring tests skipped on Windows).
+**Verification:** `pytest tests/` 66 passed, 4 skipped (Windows DPAPI tests skipped on macOS; macOS keyring tests skipped on Windows).
 
 ### Coverage Notes
 
 | Module | Coverage | Classification | Reason |
 |---|---|---|---|
-| `tools/research.py` 32–34 | Uncovered | Acceptable | `_get_session` body — mocked out in all tool tests; covered indirectly by integration |
-| `tools/research.py` 65→67 | Uncovered | Acceptable | jitter-skip branch (`elapsed >= jitter`) — timing-dependent; consecutive-call path covered |
-| `tools/research.py` 95 | Uncovered | Gap → test below | auth-error handler through the locked wrapper |
+| `tools/research.py` 34–35 | Uncovered | Acceptable | `_get_session` body — mocked out in all tool tests; covered indirectly by integration |
+| `tools/research.py` 83→85 | Uncoverable | Acceptable | Async-with bytecode arc (skip `async with` header) — no execution takes it; the `__aenter__`-raises path it resembles is covered by the no-stored-credentials test |
+| `client/endpoints.py` 63 | Uncovered | Acceptable | Blank-line `continue` in NDJSON stream — defensive skip; exercised in live integration |
+| `client/session.py` | 100% | — | statsig-absent branch covered (audit-added test) |
 
 - [x] `tests/tools/test_research.py` — auth-error test: `AuthRequired` from session layer returns actionable error through both locks
 

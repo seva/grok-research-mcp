@@ -27,6 +27,18 @@ async def test_build_session_injects_cookies():
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_build_session_omits_statsig_header_when_missing():
+    auth = {k: v for k, v in AUTH.items() if k != "statsig_id"}
+    respx.get("https://grok.com/test").mock(return_value=httpx.Response(200))
+    async with build_session(auth) as client:
+        resp = await client.get("https://grok.com/test")
+    assert resp.status_code == 200
+    request = respx.calls.last.request
+    assert "x-statsig-id" not in request.headers
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_build_session_injects_statsig_header():
     respx.get("https://grok.com/test").mock(return_value=httpx.Response(200))
     async with build_session(AUTH) as client:

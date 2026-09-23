@@ -192,6 +192,19 @@ async def test_run_query_returns_error_on_auth_required(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_run_query_returns_error_when_no_stored_credentials():
+    """AuthRequired from load() (real _get_session, no stored auth) surfaces the
+    actionable error and releases the file lock."""
+    from grok_research_mcp.auth.store import AuthRequired
+
+    with patch("grok_research_mcp.tools.research.load", side_effect=AuthRequired("no auth file")):
+        result = await grok_web_search("test")
+
+    assert "Auth required" in result
+    assert "python -m grok_research_mcp auth" in result
+
+
+@pytest.mark.asyncio
 async def test_run_query_returns_error_on_http_status_error():
     mock_response = MagicMock()
     mock_response.status_code = 429
@@ -262,8 +275,10 @@ async def test_grok_web_search_is_reasoning_false_by_default(mock_send):
 # --- #19: per-query jitter delay ---
 
 @pytest.fixture(autouse=True)
-def reset_last_query_time():
+def reset_last_query_time(tmp_path, monkeypatch):
     research_module._last_query_time = 0.0
+    # Never touch the real ~/.grok-mcp/query.lock from tests
+    monkeypatch.setattr(research_module, "_query_file_lock_path", str(tmp_path / "query.lock"))
     yield
     research_module._last_query_time = 0.0
 

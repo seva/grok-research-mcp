@@ -3,6 +3,7 @@ import os
 import random
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
 import httpx
@@ -43,12 +44,19 @@ def _format_result(text: str, citations: list) -> str:
 
 @asynccontextmanager
 async def _acquire_file_lock():
+    # All filelock ops run on one dedicated thread: filelock's held-registry is
+    # thread-local, so acquire on worker A + release on worker B leaks A's entry
+    # and the next acquire on reused-A raises a false deadlock RuntimeError.
+    loop = asyncio.get_running_loop()
     lock = FileLock(_query_file_lock_path, timeout=-1, thread_local=False)
-    await asyncio.to_thread(lock.acquire)
+    await loop.run_in_executor(_lock_executor, lock.acquire)
     try:
         yield
     finally:
-        await asyncio.to_thread(lock.release)
+        await loop.run_in_executor(_lock_executor, lock.release)
+
+
+_lock_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="grok-query-lock")
 
 
 async def _run_query(query: str, mode: str, is_reasoning: bool = False) -> str:

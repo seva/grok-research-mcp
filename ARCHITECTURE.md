@@ -128,7 +128,10 @@ Serialization (two layers — each MCP client spawns its own server process):
   thread-pool workers via `asyncio.to_thread`; thread-local state would make release
   a silent no-op), acquired per attempt: `_run_query` holds `_query_lock`, runs
   `_single_attempt` under the file lock, sleeps 400-backoff unlocked, re-acquires
-  for the next attempt (#25).
+  for the next attempt (#25). All filelock ops run on one dedicated
+  single-thread executor — filelock's held-registry is thread-local, so spread
+  across pool workers the release lands on the wrong thread, leaks the entry,
+  and the next acquire on the reused thread raises a false deadlock error.
 
 Applies per-query jitter delay (2–8s) between consecutive calls. Retries on HTTP 400 with exponential backoff (up to 3×, 30s/60s/120s).
 HTTP 429 is NOT retried — Owner decision (#26, closed): a 429 means stop sending, and re-firing into it is the opposite of the correct response. Protection is preventive only (jitter + global serialization). No reactive cross-process cooldown exists.
