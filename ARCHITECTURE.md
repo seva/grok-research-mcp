@@ -2,7 +2,7 @@
 
 MCP server that exposes Grok's web research tools (web search, X search) to any MCP client.
 Authenticates as the user's X account via automated browser login; stores credentials
-securely with DPAPI.
+securely with the platform keychain (DPAPI on Windows, Keychain on macOS).
 
 ---
 
@@ -12,7 +12,7 @@ securely with DPAPI.
 
 **Isolation of fragility** — the unofficial Grok web API is contained entirely in `client/endpoints.py`. When endpoints change, only that file updates. Nothing else knows about Grok's internal API shape.
 
-**Security** — credentials never in plaintext on disk. DPAPI ensures only the local user can decrypt. Auth tokens never logged or surfaced in tool output.
+**Security** — credentials never in plaintext on disk. DPAPI (Windows) / Keychain (macOS) ensures only the local user can decrypt. Auth tokens never logged or surfaced in tool output.
 
 ---
 
@@ -40,10 +40,14 @@ MCP client (e.g. Claude Code, Cursor, Cline)
 │      session.py  ──────────────────────→  grok.com (web API)
 │      endpoints.py               │
 │                                 │
-│  auth/                          │
-│      browser.py  ──────────────────────→  Chromium (headed)
-│      store.py    ←→  ~/.grok-mcp/auth.dpapi
-└─────────────────────────────────┘
+ │  auth/                          │
+ │      browser.py  ──────────────────────→  Chromium (headed)    │
+ │      store.py (dispatch)              │
+ │        store_win32.py ←→  ~/.grok-mcp/auth.dpapi (DPAPI)        │
+ │        store_darwin.py ←→ Keychain (service grok-research-mcp)  │
+ │                                 │
+ │  query lock: ~/.grok-mcp/query.lock (filelock, cross-process)  │
+ └─────────────────────────────────┘
 ```
 
 ---
@@ -60,10 +64,13 @@ Waits for user to complete login (polls for `sso` + `sso-rw` cookies appearing).
 Captures the full cookie set and the `statsig_id` from localStorage.
 Returns cookie dict. Browser closes immediately after capture.
 
-### `auth/store.py`
-Encrypts the cookie dict (JSON) with Windows DPAPI (`win32crypt.CryptProtectData`,
-user-scoped). Writes opaque blob to `~/.grok-mcp/auth.dpapi`.
-`load()` decrypts and parses. `is_expired()` checks `sso` cookie expiry timestamp.
+### `auth/store.py` (+ `store_base.py`, `store_win32.py`, `store_darwin.py`)
+Platform-aware dispatch: `sys.platform == "win32"` → DPAPI path (`store_win32.py`:
+`win32crypt.CryptProtectData`, user-scoped, opaque blob at `~/.grok-mcp/auth.dpapi`);
+otherwise → macOS Keychain via `keyring` (`store_darwin.py`, service
+`grok-research-mcp`, username `auth`, JSON stored as string).
+`load()` decrypts/reads and parses; raises `AuthRequired` when missing or corrupt.
+`is_expired()` checks both `sso` and `sso-rw` cookie expiry timestamps.
 
 ### `client/session.py`
 `httpx` async session with cookies + enriched Chrome fingerprint headers injected on every request.
@@ -81,7 +88,16 @@ Implements MCP tools:
 - `grok_web_search(query: str, is_reasoning: bool = False) -> str` — web research, returns text + citations
 - `grok_x_search(query: str, is_reasoning: bool = False) -> str` — X search, returns text + citations
 
+Serialization (two layers — each MCP client spawns its own server process):
+- in-process `_query_lock = asyncio.Lock()` (intra-process fast path)
+- cross-process `~/.grok-mcp/query.lock` via `filelock` — fresh instance per query,
+  `timeout=-1`, `thread_local=False` (mandatory: acquire/release run on different
+  thread-pool workers via `asyncio.to_thread`; thread-local state would make release
+  a silent no-op), held across the full query body (variant b — body stays async).
+
 Applies per-query jitter delay (2–8s) between consecutive calls. Retries on HTTP 400 with exponential backoff (up to 3×, 30s/60s/120s).
+HTTP 429 is NOT retried — returns `Error: API returned 429` immediately (see #26 for the pending rationale decision).
+Known flaw: the 400-retry backoff sleeps while holding the global lock (#25).
 
 ### `__main__.py`
 CLI entry point with three subcommands:
@@ -96,15 +112,16 @@ CLI entry point with three subcommands:
 ```
 First run (no stored auth):
   startup → store.load() → not found
-         → browser.py: spawn Chromium → navigate grok.com
-         → user logs in (headed, interactive)
-         → poll: sso + sso-rw cookies present
-         → capture cookies + statsig_id
-         → store.save() → DPAPI encrypt → ~/.grok-mcp/auth.dpapi
+          → browser.py: spawn Chromium → navigate grok.com
+          → user logs in (headed, interactive)
+          → poll: sso + sso-rw cookies present
+          → capture cookies + statsig_id
+          → store.save() → DPAPI encrypt → ~/.grok-mcp/auth.dpapi (Windows)
+                        → Keychain service grok-research-mcp (macOS)
          → session ready
 
 Subsequent runs:
-  startup → store.load() → DPAPI decrypt → cookie dict
+  startup → store.load() → DPAPI decrypt / Keychain read → cookie dict
           → store.is_expired()? → no → session ready
                                 → yes → re-trigger browser flow
 
@@ -119,13 +136,15 @@ Mid-session expiry:
 
 ```
 MCP client: tool call grok_web_search("query")
-  → research.py: [jitter delay if not first call]
+  → research.py: acquire in-process lock + cross-process file lock (blocks until previous query finishes)
+  → [jitter delay if not first call]
   → send_message(session, conv_id=None, query, mode="web") → AsyncIterator
       stream yields: tokens → conv_id → model_response (citations)
   → strip grok:render tags from canonical message
   → format text + citations
-  → return to MCP client
-  [on HTTP 400: retry up to 3× with backoff before returning error]
+  → release locks → return to MCP client
+  [on HTTP 400: retry up to 3× with backoff before returning error — backoff sleeps hold the locks (#25)]
+  [on HTTP 429: no retry, error returned immediately (#26)]
 ```
 
 ---
@@ -137,7 +156,8 @@ MCP client: tool call grok_web_search("query")
 | Language | Python | DPAPI via `pywin32` is mature; Grok ecosystem is Python; MCP SDK supports Python |
 | Browser automation | Playwright | Async-native; `context.cookies()` API; better than Selenium for this use case |
 | Browser mode | Headed | X bot detection; user must complete login/MFA visually |
-| Auth storage | DPAPI (user-scoped) | OS-level encryption tied to Windows user; no key management |
+| Auth storage | DPAPI (Windows) / Keychain via `keyring` (macOS) | OS-level encryption tied to local user; no key management |
+| Cross-process lock | `filelock` on `~/.grok-mcp/query.lock` | Cross-platform (msvcrt/fcntl); stale-lock safe; no new OS-specific code |
 | HTTP client | `httpx` | Async; cookie jar control; stream support |
 | Transport | stdio | MCP standard; no port/firewall config |
 | Grok client base | `mem0ai/grok3-api` + `grokit` | Verified endpoint knowledge; borrow, don't reinvent |
@@ -163,7 +183,7 @@ All other cookies in the session are captured and forwarded but `sso` + `sso-rw`
 
 ## Constraints
 
-- **Windows only** — DPAPI is Windows-specific. Linux/Mac would require a different secure store (keyring).
+- **Windows + macOS** — credential store is DPAPI on Windows, Keychain on macOS. Linux uses the `keyring` path untested.
 - **Unofficial API** — Grok web endpoints are undocumented and may change.
 - **X ToS** — Programmatic access to the web interface is not officially sanctioned.
 - **Session longevity** — `sso` cookie lifetime is typically 30 days. Re-auth required on expiry.
