@@ -129,7 +129,7 @@ Serialization (two layers — each MCP client spawns its own server process):
   a silent no-op), held across the full query body (variant b — body stays async).
 
 Applies per-query jitter delay (2–8s) between consecutive calls. Retries on HTTP 400 with exponential backoff (up to 3×, 30s/60s/120s).
-HTTP 429 is NOT retried — returns `Error: API returned 429` immediately (see #26 for the pending rationale decision).
+HTTP 429 is NOT retried — Owner decision (#26): a 429 means stop sending, and re-firing into it is the opposite of the correct response. Protection is preventive only (jitter + global serialization). No reactive cross-process cooldown exists: after a 429 the next query may fire after normal jitter.
 Known flaw: the 400-retry backoff sleeps while holding the global lock (#25).
 
 ### `__main__.py`
