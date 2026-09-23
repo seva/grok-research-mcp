@@ -1,16 +1,22 @@
 import asyncio
+import os
 import random
 import re
 import time
 from contextlib import asynccontextmanager
 
 import httpx
+from filelock import FileLock
 
 _RETRY_MAX: int = 3
 _BACKOFF_INITIAL: float = 30.0
 _BACKOFF_MAX: float = 300.0
 
 _last_query_time: float = 0.0
+_query_lock = asyncio.Lock()
+_query_file_lock_path: str = os.environ.get(
+    "GROK_MCP_DIR", os.path.join(os.path.expanduser("~"), ".grok-mcp")
+) + "/query.lock"
 _JITTER_MIN: float = 2.0
 _JITTER_MAX: float = 8.0
 
@@ -35,7 +41,22 @@ def _format_result(text: str, citations: list) -> str:
     return f"{text}\n\nSources:\n{sources}"
 
 
+@asynccontextmanager
+async def _acquire_file_lock():
+    lock = FileLock(_query_file_lock_path, timeout=-1, thread_local=False)
+    await asyncio.to_thread(lock.acquire)
+    try:
+        yield
+    finally:
+        await asyncio.to_thread(lock.release)
+
+
 async def _run_query(query: str, mode: str, is_reasoning: bool = False) -> str:
+    async with _query_lock, _acquire_file_lock():
+        return await _run_query_locked(query, mode, is_reasoning)
+
+
+async def _run_query_locked(query: str, mode: str, is_reasoning: bool = False) -> str:
     global _last_query_time
     now = time.monotonic()
     if _last_query_time > 0:

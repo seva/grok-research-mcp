@@ -120,13 +120,19 @@ dependencies = [
   "mcp>=1.0",
   "playwright>=1.40",
   "httpx>=0.27",
-  "pywin32>=306",
+  "keyring>=24.0",
+  "filelock>=3.13",
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0",
   "pytest-asyncio>=0.23",
+  "pytest-cov>=4.0",
+  "respx>=0.20",
+]
+windows = [
+  "pywin32>=306",
 ]
 ```
 
@@ -206,6 +212,38 @@ playwright install chromium
 |---|---|---|---|
 | `auth/store_win32.py` | 0% on macOS | Acceptable | Windows-only DPAPI branch; not executable on macOS. Covered on Windows by the 4 skipped tests. |
 | `auth/store.py` | ~71% | Acceptable | Win32 branch (line 4) not reachable on macOS. |
+
+---
+
+## Phase 7 — Cross-process query serialization (#24)
+
+**Goal:** concurrent queries serialize across MCP client processes (each stdio client spawns its own server process; the in-process `asyncio.Lock` is insufficient alone).
+
+### Tasks
+
+- [x] `pyproject.toml` — add `filelock>=3.13` to `dependencies`
+- [x] `tools/research.py`
+  - in-process `_query_lock = asyncio.Lock()` (intra-process fast path)
+  - `_acquire_file_lock()` — fresh `FileLock("~/.grok-mcp/query.lock", timeout=-1, thread_local=False)` per query, acquired/released via `asyncio.to_thread` (variant b: body stays async)
+  - `thread_local=False` is mandatory — acquire/release run on different thread-pool workers, otherwise release silently no-ops
+  - `_run_query` chains both locks, delegates to `_run_query_locked`
+- [x] `tests/tools/test_research.py`
+  - lock-held-during-flight (independent probe with `timeout=0` fails to acquire mid-query, succeeds after)
+  - concurrent-calls-serialize (two `gather`ed queries execute enter→exit→enter→exit; patches applied once outside `gather` — per-coroutine patching clobbers the shared module global when the first context exits)
+- [ ] #25 — 400-retry backoff sleeps while holding the global lock (retry loop must release/re-acquire per attempt)
+- [ ] #26 — record 429 no-retry rationale (retry-with-Retry-After vs wontfix-by-design)
+
+**Verification:** `pytest tests/` 63 passed, 4 skipped (Windows DPAPI tests skipped on macOS; macOS keyring tests skipped on Windows).
+
+### Coverage Notes
+
+| Module | Coverage | Classification | Reason |
+|---|---|---|---|
+| `tools/research.py` 32–34 | Uncovered | Acceptable | `_get_session` body — mocked out in all tool tests; covered indirectly by integration |
+| `tools/research.py` 65→67 | Uncovered | Acceptable | jitter-skip branch (`elapsed >= jitter`) — timing-dependent; consecutive-call path covered |
+| `tools/research.py` 95 | Uncovered | Gap → test below | auth-error handler through the locked wrapper |
+
+- [x] `tests/tools/test_research.py` — auth-error test: `AuthRequired` from session layer returns actionable error through both locks
 
 ---
 

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 import grok_research_mcp.tools.research as research_module
 from grok_research_mcp.tools.research import grok_web_search, grok_x_search, _format_result
 from grok_research_mcp.client.session import AccessDenied
+from filelock import FileLock, Timeout
 
 
 SAMPLE_TOKENS = ["Paris is the ", "capital of France."]
@@ -162,6 +163,35 @@ async def test_run_query_returns_error_on_access_denied():
 
 
 @pytest.mark.asyncio
+async def test_run_query_returns_error_on_auth_required(tmp_path):
+    """AuthRequired from the session layer surfaces an actionable error through both locks,
+    and the file lock is released (a follow-up query proceeds)."""
+    from grok_research_mcp.auth.store import AuthRequired
+
+    async def _raising(*args, **kwargs):
+        raise AuthRequired("no stored credentials")
+        yield  # makes this an async generator
+
+    lock_path = str(tmp_path / "query.lock")
+    with patch("grok_research_mcp.tools.research.send_message", _raising):
+        with patch("grok_research_mcp.tools.research._get_session") as mock_ctx:
+            with patch("grok_research_mcp.tools.research._query_file_lock_path", lock_path):
+                _patched_session(mock_ctx)
+                result = await grok_web_search("test")
+
+    assert "Auth required" in result
+    assert "python -m grok_research_mcp auth" in result
+    probe = FileLock(lock_path, timeout=0)
+    try:
+        probe.acquire()
+        released = True
+        probe.release()
+    except Timeout:
+        released = False
+    assert released is True
+
+
+@pytest.mark.asyncio
 async def test_run_query_returns_error_on_http_status_error():
     mock_response = MagicMock()
     mock_response.status_code = 429
@@ -307,3 +337,65 @@ async def test_run_query_returns_down_message_after_exhausted_retries():
 
     assert "down" in result.lower()
     assert mock_sleep.call_count == 3  # _RETRY_MAX retries
+
+
+# --- cross-process serialization (query.lock) ---
+
+@pytest.mark.asyncio
+async def test_run_query_holds_file_lock_during_execution(mock_send, tmp_path):
+    """While a query is in-flight, the file lock is held; released after."""
+    lock_path = str(tmp_path / "query.lock")
+    held_during = {}
+
+    async def _gen(*args, **kwargs):
+        probe = FileLock(lock_path, timeout=0)
+        try:
+            probe.acquire()
+            held_during["inflight"] = False
+            probe.release()
+        except Timeout:
+            held_during["inflight"] = True
+        yield "tok", None, None
+
+    with patch("grok_research_mcp.tools.research.send_message", _gen):
+        with patch("grok_research_mcp.tools.research._get_session") as mock_ctx:
+            with patch("grok_research_mcp.tools.research._query_file_lock_path", lock_path):
+                _patched_session(mock_ctx)
+                await grok_web_search("test")
+
+    assert held_during["inflight"] is True
+
+    probe = FileLock(lock_path, timeout=0)
+    try:
+        probe.acquire()
+        released = True
+        probe.release()
+    except Timeout:
+        released = False
+    assert released is True
+
+
+@pytest.mark.asyncio
+async def test_run_query_serializes_concurrent_calls(tmp_path):
+    """Two concurrent queries execute serially, not interleaved."""
+    import asyncio
+    events = []
+
+    async def _gen(session, conv_id, text, mode, **kwargs):
+        events.append(f"enter:{text}")
+        await asyncio.sleep(0.01)
+        events.append(f"exit:{text}")
+        yield "tok", None, None
+
+    async def _run(name):
+        research_module._last_query_time = 0.0
+        await grok_web_search(name)
+
+    with patch("grok_research_mcp.tools.research.send_message", _gen):
+        with patch("grok_research_mcp.tools.research._get_session") as mock_ctx:
+            with patch("grok_research_mcp.tools.research._query_file_lock_path", str(tmp_path / "query.lock")):
+                _patched_session(mock_ctx)
+                await asyncio.gather(_run("first"), _run("second"))
+
+    assert [e.split(":")[0] for e in events] == ["enter", "exit", "enter", "exit"]
+    assert events[0][6:] == events[1][5:]  # first entered and exited before second started
