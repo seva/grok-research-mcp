@@ -205,10 +205,130 @@ async def test_run_query_returns_error_when_no_stored_credentials():
 
 
 @pytest.mark.asyncio
+async def test_429_writes_shared_cooldown(mock_send):
+    """#28: a 429 writes a wall-clock cooldown-until timestamp for all processes."""
+    import time
+    mock_response = MagicMock()
+    mock_response.status_code = 429
+    mock_response.headers = {}
+
+    async def _raising(*args, **kwargs):
+        raise httpx.HTTPStatusError("Too Many Requests", request=MagicMock(), response=mock_response)
+        yield
+
+    before = time.time()
+    with patch("grok_research_mcp.tools.research.send_message", _raising):
+        with patch("grok_research_mcp.tools.research._get_session") as mock_ctx:
+            _patched_session(mock_ctx)
+            result = await grok_web_search("test")
+
+    assert "429" in result
+    until = float(open(research_module._cooldown_path).read().strip())
+    assert before + 60 <= until <= before + 90 + 5
+
+
+@pytest.mark.asyncio
+async def test_query_waits_for_cooldown_before_firing(mock_send):
+    """#28: a live cooldown delays the query (unlocked) before send_message runs."""
+    import asyncio
+    import time
+    with open(research_module._cooldown_path, "w") as fh:
+        fh.write(str(time.time() + 30))
+
+    send_calls = []
+
+    async def _recording(session, conv_id, text, mode, **kwargs):
+        send_calls.append(text)
+        async for item in mock_send(session, conv_id, text, mode):
+            yield item
+
+    with patch("grok_research_mcp.tools.research.send_message", _recording):
+        with patch("grok_research_mcp.tools.research._get_session") as mock_ctx:
+            with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+                _patched_session(mock_ctx)
+                result = await grok_web_search("test")
+
+    assert send_calls == ["test"]
+    assert "Paris is the capital of France." in result
+    delays = [c[0][0] for c in mock_sleep.call_args_list]
+    assert any(29 <= d <= 30 for d in delays)
+
+
+@pytest.mark.asyncio
+async def test_retry_after_header_sets_cooldown():
+    """#28: Retry-After response header overrides the default cooldown duration."""
+    import time
+    mock_response = MagicMock()
+    mock_response.status_code = 429
+    mock_response.headers = {"retry-after": "5"}
+
+    async def _raising(*args, **kwargs):
+        raise httpx.HTTPStatusError("Too Many Requests", request=MagicMock(), response=mock_response)
+        yield
+
+    before = time.time()
+    with patch("grok_research_mcp.tools.research.send_message", _raising):
+        with patch("grok_research_mcp.tools.research._get_session") as mock_ctx:
+            _patched_session(mock_ctx)
+            result = await grok_web_search("test")
+
+    assert "429" in result
+    until = float(open(research_module._cooldown_path).read().strip())
+    assert before + 5 <= until <= before + 5 + 5
+
+
+def test_cooldown_delay_parsing():
+    assert research_module._cooldown_delay("120") == 120.0
+    assert 60 <= research_module._cooldown_delay(None) <= 90
+    assert 60 <= research_module._cooldown_delay("not-a-number") <= 90
+    assert 60 <= research_module._cooldown_delay("0") <= 90
+    assert 60 <= research_module._cooldown_delay("-5") <= 90
+
+
+@pytest.mark.asyncio
+async def test_cooldown_write_failure_degrades_gracefully(tmp_path):
+    """Pointing the cooldown path at a directory: write raises OSError, query still returns."""
+    import asyncio
+    mock_response = MagicMock()
+    mock_response.status_code = 429
+    mock_response.headers = {}
+
+    async def _raising(*args, **kwargs):
+        raise httpx.HTTPStatusError("Too Many Requests", request=MagicMock(), response=mock_response)
+        yield
+
+    with patch("grok_research_mcp.tools.research.send_message", _raising):
+        with patch("grok_research_mcp.tools.research._get_session") as mock_ctx:
+            with patch("grok_research_mcp.tools.research._cooldown_path", str(tmp_path)):
+                with patch("asyncio.sleep", new_callable=AsyncMock):
+                    _patched_session(mock_ctx)
+                    result = await grok_web_search("test")
+
+    assert "429" in result
+
+
+@pytest.mark.asyncio
+async def test_run_query_returns_error_on_server_error():
+    mock_response = MagicMock()
+    mock_response.status_code = 503
+    mock_response.headers = {}
+
+    async def _raising(*args, **kwargs):
+        raise httpx.HTTPStatusError("Service Unavailable", request=MagicMock(), response=mock_response)
+        yield
+
+    with patch("grok_research_mcp.tools.research.send_message", _raising):
+        with patch("grok_research_mcp.tools.research._get_session") as mock_ctx:
+            _patched_session(mock_ctx)
+            result = await grok_web_search("test")
+
+    assert "503" in result
+
+
+@pytest.mark.asyncio
 async def test_run_query_returns_error_on_http_status_error():
     mock_response = MagicMock()
     mock_response.status_code = 429
-
     async def _raising(*args, **kwargs):
         raise httpx.HTTPStatusError("Too Many Requests", request=MagicMock(), response=mock_response)
         yield
@@ -277,8 +397,9 @@ async def test_grok_web_search_is_reasoning_false_by_default(mock_send):
 @pytest.fixture(autouse=True)
 def reset_last_query_time(tmp_path, monkeypatch):
     research_module._last_query_time = 0.0
-    # Never touch the real ~/.grok-mcp/query.lock from tests
+    # Never touch the real ~/.grok-mcp/ state from tests
     monkeypatch.setattr(research_module, "_query_file_lock_path", str(tmp_path / "query.lock"))
+    monkeypatch.setattr(research_module, "_cooldown_path", str(tmp_path / "cooldown.txt"))
     yield
     research_module._last_query_time = 0.0
 

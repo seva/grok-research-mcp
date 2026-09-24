@@ -133,8 +133,8 @@ Serialization (two layers — each MCP client spawns its own server process):
   across pool workers the release lands on the wrong thread, leaks the entry,
   and the next acquire on the reused thread raises a false deadlock error.
 
-Applies per-query jitter delay (2–8s) between consecutive calls. Retries on HTTP 400 with exponential backoff (up to 3×, 30s/60s/120s).
-HTTP 429 is NOT retried — Owner decision (#26, closed): a 429 means stop sending, and re-firing into it is the opposite of the correct response. Protection is preventive only (jitter + global serialization). No reactive cross-process cooldown exists.
+Applies per-query jitter delay (2–8s) between consecutive calls. Retries on HTTP 400 with exponential backoff (up to 3×, 30s/60s/120s, sleeps unlocked per #25).
+HTTP 429 is NOT retried — Owner decision (#26, closed): a 429 writes a shared wall-clock cooldown (`~/.grok-mcp/cooldown.txt`, 60s + 0–30s jitter, or `Retry-After` when present) and returns `Error: API returned 429 (rate limited; cooling down Ns)`. Every query waits out a live cooldown unlocked before acquiring any lock, re-checked inside `_query_lock` before each attempt (#28). No reactive per-client backoff beyond the shared file.
 Known flaw: the 400-retry backoff sleeps while holding the global lock (#25).
 
 ### `__main__.py`
@@ -176,9 +176,10 @@ Mid-session expiry:
 
 ```
 MCP client: tool call grok_web_search("query")
-  → research.py: acquire in-process lock (held for the whole query)
+  → research.py: wait out shared cooldown if live (unlocked)
+  → acquire in-process lock (held for the whole query)
   → [jitter delay if not first call]
-  → per attempt: acquire file lock → single attempt → release lock
+  → per attempt: re-check cooldown (unlocked) → acquire file lock → single attempt → release lock
   → [on retryable HTTP 400: backoff sleep UNLOCKED, re-acquire for next attempt]
   → send_message(session, conv_id=None, query, mode="web") → AsyncIterator
       stream yields: tokens → conv_id → model_response (citations)
@@ -186,7 +187,7 @@ MCP client: tool call grok_web_search("query")
   → format text + citations
   → release in-process lock → return to MCP client
   [on HTTP 400: retry up to 3× with unlocked backoff before returning error]
-  [on HTTP 429: no retry, error returned immediately (#26, closed)]
+  [on HTTP 429: write shared cooldown, no retry, error returned immediately (#26 closed, #28)]
 ```
 
 ---
@@ -200,6 +201,7 @@ MCP client: tool call grok_web_search("query")
 | Browser mode | Headed | X bot detection; user must complete login/MFA visually |
 | Auth storage | DPAPI (Windows) / Keychain via `keyring` (macOS) | OS-level encryption tied to local user; no key management |
 | Cross-process lock | `filelock` on `~/.grok-mcp/query.lock` | Cross-platform (msvcrt/fcntl); stale-lock safe; no new OS-specific code |
+| Rate-limit cooldown | wall-clock timestamp in `~/.grok-mcp/cooldown.txt` | Cross-process without IPC; wall-clock (not monotonic) so independent processes agree; corrupt/missing reads as no cooldown |
 | HTTP client | `httpx` | Async; cookie jar control; stream support |
 | Transport | stdio | MCP standard; no port/firewall config |
 | Grok client base | `mem0ai/grok3-api` + `grokit` | Verified endpoint knowledge; borrow, don't reinvent |

@@ -235,16 +235,40 @@ playwright install chromium
 
 **Verification:** `pytest tests/` 66 passed, 4 skipped (Windows DPAPI tests skipped on macOS; macOS keyring tests skipped on Windows).
 
+### Coverage Notes (superseded by Phase 8 Coverage Notes below — line numbers shifted after the #28 implementation)
+
+- [x] `tests/tools/test_research.py` — auth-error test: `AuthRequired` from session layer returns actionable error through both locks
+
+## Phase 8 — Rate-limit cooldown + bounded wait (#28, #29)
+
+**Goal:** a 429 produces a shared cross-process cooldown instead of immediate refire; a queued caller gets an actionable busy error instead of hanging into the client's mystery timeout.
+
+### Tasks
+
+- [x] `tests/tools/test_research.py` (#28, test-first: red on missing `_cooldown_path`, green after)
+  - 429 writes shared wall-clock cooldown (default 60s + 0–30s jitter)
+  - query waits out a live cooldown unlocked before `send_message` runs
+  - `Retry-After` header overrides the default duration
+  - `_cooldown_delay` parsing edges (numeric / garbage / zero / negative / None)
+  - cooldown write failure (path is a directory) degrades gracefully, query still returns
+  - generic 5xx returns `Error: API returned NNN`
+- [x] `tools/research.py` (#28)
+  - `_cooldown_path` (`~/.grok-mcp/cooldown.txt`), `_COOLDOWN_BASE = 60.0`, `_COOLDOWN_JITTER = 30.0`
+  - `_read_cooldown` (missing/corrupt → 0.0), `_write_cooldown` (best-effort, OSError swallowed), `_cooldown_delay` (numeric Retry-After or base+jitter)
+  - `_wait_for_cooldown` loop (re-reads after sleep — another process may extend); checked pre-lock and re-checked inside `_query_lock` before each attempt, never while holding the file lock
+  - 429 handler writes cooldown, returns `Error: API returned 429 (rate limited; cooling down Ns)` — no retry (#26 stands)
+- [ ] #29 — bound the file-lock wait (`FileLock(timeout=60)` → actionable busy error)
+
+**Verification:** `pytest tests/` 72 passed, 4 skipped.
+
 ### Coverage Notes
 
 | Module | Coverage | Classification | Reason |
 |---|---|---|---|
-| `tools/research.py` 34–35 | Uncovered | Acceptable | `_get_session` body — mocked out in all tool tests; covered indirectly by integration |
-| `tools/research.py` 83→85 | Uncoverable | Acceptable | Async-with bytecode arc (skip `async with` header) — no execution takes it; the `__aenter__`-raises path it resembles is covered by the no-stored-credentials test |
+| `tools/research.py` 39–40 | Uncovered | Acceptable | `_get_session` body — mocked out in all tool tests; covered indirectly by integration |
+| `tools/research.py` 124→126 | Uncovered | Acceptable | jitter-skip branch (`elapsed >= jitter`) — timing-dependent; consecutive-call path covered |
 | `client/endpoints.py` 63 | Uncovered | Acceptable | Blank-line `continue` in NDJSON stream — defensive skip; exercised in live integration |
-| `client/session.py` | 100% | — | statsig-absent branch covered (audit-added test) |
-
-- [x] `tests/tools/test_research.py` — auth-error test: `AuthRequired` from session layer returns actionable error through both locks
+| `client/session.py` | 100% | — | statsig-absent branch covered (Phase 7 audit test) |
 
 ---
 

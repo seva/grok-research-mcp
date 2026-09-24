@@ -18,6 +18,11 @@ _query_lock = asyncio.Lock()
 _query_file_lock_path: str = os.environ.get(
     "GROK_MCP_DIR", os.path.join(os.path.expanduser("~"), ".grok-mcp")
 ) + "/query.lock"
+_cooldown_path: str = os.environ.get(
+    "GROK_MCP_DIR", os.path.join(os.path.expanduser("~"), ".grok-mcp")
+) + "/cooldown.txt"
+_COOLDOWN_BASE: float = 60.0
+_COOLDOWN_JITTER: float = 30.0
 _JITTER_MIN: float = 2.0
 _JITTER_MAX: float = 8.0
 
@@ -60,11 +65,13 @@ _lock_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="grok-quer
 
 
 async def _run_query(query: str, mode: str, is_reasoning: bool = False) -> str:
+    await _wait_for_cooldown()
     async with _query_lock:
         await _apply_jitter()
         attempt = 0
         backoff = _BACKOFF_INITIAL
         while True:
+            await _wait_for_cooldown()
             async with _acquire_file_lock():
                 result, retryable = await _single_attempt(query, mode, is_reasoning, attempt)
             if not retryable:
@@ -72,6 +79,40 @@ async def _run_query(query: str, mode: str, is_reasoning: bool = False) -> str:
             attempt += 1
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, _BACKOFF_MAX)
+
+
+def _read_cooldown() -> float:
+    try:
+        with open(_cooldown_path) as fh:
+            return float(fh.read().strip())
+    except (OSError, ValueError):
+        return 0.0
+
+
+def _write_cooldown(until: float) -> None:
+    try:
+        with open(_cooldown_path, "w") as fh:
+            fh.write(str(until))
+    except OSError:
+        pass
+
+
+def _cooldown_delay(retry_after: object) -> float:
+    try:
+        parsed = float(retry_after)
+        if parsed > 0:
+            return parsed
+    except (TypeError, ValueError):
+        pass
+    return _COOLDOWN_BASE + random.uniform(0, _COOLDOWN_JITTER)
+
+
+async def _wait_for_cooldown() -> None:
+    while True:
+        remaining = _read_cooldown() - time.time()
+        if remaining <= 0:
+            return
+        await asyncio.sleep(remaining)
 
 
 async def _apply_jitter() -> None:
@@ -106,6 +147,11 @@ async def _single_attempt(query: str, mode: str, is_reasoning: bool, attempt: in
             return None, True
         if e.response.status_code == 400:
             return "Error: Grok appears to be down (HTTP 400 after retries). Try again later.", False
+        if e.response.status_code == 429:
+            headers = getattr(e.response, "headers", None) or {}
+            delay = _cooldown_delay(headers.get("retry-after", None))
+            _write_cooldown(time.time() + delay)
+            return f"Error: API returned 429 (rate limited; cooling down {int(delay)}s)", False
         return f"Error: API returned {e.response.status_code}", False
     except (AuthRequired, AuthExpired) as e:
         return f"Error: Auth required. Run: python -m grok_research_mcp auth ({e})", False
