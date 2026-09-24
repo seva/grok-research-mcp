@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
 import httpx
-from filelock import FileLock
+from filelock import FileLock, Timeout as FileLockTimeout
 
 _RETRY_MAX: int = 3
 _BACKOFF_INITIAL: float = 30.0
@@ -23,6 +23,11 @@ _cooldown_path: str = os.environ.get(
 ) + "/cooldown.txt"
 _COOLDOWN_BASE: float = 60.0
 _COOLDOWN_JITTER: float = 30.0
+_LOCK_TIMEOUT: float = 60.0
+
+
+class _QueryBusy(Exception):
+    pass
 _JITTER_MIN: float = 2.0
 _JITTER_MAX: float = 8.0
 
@@ -53,8 +58,11 @@ async def _acquire_file_lock():
     # thread-local, so acquire on worker A + release on worker B leaks A's entry
     # and the next acquire on reused-A raises a false deadlock RuntimeError.
     loop = asyncio.get_running_loop()
-    lock = FileLock(_query_file_lock_path, timeout=-1, thread_local=False)
-    await loop.run_in_executor(_lock_executor, lock.acquire)
+    lock = FileLock(_query_file_lock_path, timeout=_LOCK_TIMEOUT, thread_local=False)
+    try:
+        await loop.run_in_executor(_lock_executor, lock.acquire)
+    except FileLockTimeout:
+        raise _QueryBusy(f"another query is in flight (waited {_LOCK_TIMEOUT:g}s); retry shortly")
     try:
         yield
     finally:
@@ -72,8 +80,11 @@ async def _run_query(query: str, mode: str, is_reasoning: bool = False) -> str:
         backoff = _BACKOFF_INITIAL
         while True:
             await _wait_for_cooldown()
-            async with _acquire_file_lock():
-                result, retryable = await _single_attempt(query, mode, is_reasoning, attempt)
+            try:
+                async with _acquire_file_lock():
+                    result, retryable = await _single_attempt(query, mode, is_reasoning, attempt)
+            except _QueryBusy as e:
+                return f"Error: {e}"
             if not retryable:
                 return result
             attempt += 1

@@ -326,9 +326,30 @@ async def test_run_query_returns_error_on_server_error():
 
 
 @pytest.mark.asyncio
+async def test_run_query_returns_busy_error_when_lock_held(monkeypatch):
+    """#29: a contended lock waits _LOCK_TIMEOUT then fails actionable, not forever."""
+    import asyncio
+    import time
+    monkeypatch.setattr(research_module, "_LOCK_TIMEOUT", 0.2)
+    holder = FileLock(str(research_module._query_file_lock_path), timeout=0, thread_local=False)
+    holder.acquire()
+    try:
+        start = time.monotonic()
+        result = await grok_web_search("test")
+        elapsed = time.monotonic() - start
+    finally:
+        holder.release()
+
+    assert "in flight" in result
+    assert elapsed < 10
+
+
+@pytest.mark.asyncio
 async def test_run_query_returns_error_on_http_status_error():
     mock_response = MagicMock()
     mock_response.status_code = 429
+    mock_response.headers = {}
+
     async def _raising(*args, **kwargs):
         raise httpx.HTTPStatusError("Too Many Requests", request=MagicMock(), response=mock_response)
         yield

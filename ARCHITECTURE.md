@@ -132,6 +132,9 @@ Serialization (two layers — each MCP client spawns its own server process):
   single-thread executor — filelock's held-registry is thread-local, so spread
   across pool workers the release lands on the wrong thread, leaks the entry,
   and the next acquire on the reused thread raises a false deadlock error.
+  Lock wait is bounded (`_LOCK_TIMEOUT = 60s`): on expiry the query returns
+  `Error: another query is in flight (waited 60s); retry shortly` instead of
+  hanging into the client's timeout (#29).
 
 Applies per-query jitter delay (2–8s) between consecutive calls. Retries on HTTP 400 with exponential backoff (up to 3×, 30s/60s/120s, sleeps unlocked per #25).
 HTTP 429 is NOT retried — Owner decision (#26, closed): a 429 writes a shared wall-clock cooldown (`~/.grok-mcp/cooldown.txt`, 60s + 0–30s jitter, or `Retry-After` when present) and returns `Error: API returned 429 (rate limited; cooling down Ns)`. Every query waits out a live cooldown unlocked before acquiring any lock, re-checked inside `_query_lock` before each attempt (#28). No reactive per-client backoff beyond the shared file.
@@ -179,7 +182,7 @@ MCP client: tool call grok_web_search("query")
   → research.py: wait out shared cooldown if live (unlocked)
   → acquire in-process lock (held for the whole query)
   → [jitter delay if not first call]
-  → per attempt: re-check cooldown (unlocked) → acquire file lock → single attempt → release lock
+  → per attempt: re-check cooldown (unlocked) → acquire file lock (≤60s wait, else busy error) → single attempt → release lock
   → [on retryable HTTP 400: backoff sleep UNLOCKED, re-acquire for next attempt]
   → send_message(session, conv_id=None, query, mode="web") → AsyncIterator
       stream yields: tokens → conv_id → model_response (citations)

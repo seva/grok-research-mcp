@@ -257,16 +257,20 @@ playwright install chromium
   - `_read_cooldown` (missing/corrupt → 0.0), `_write_cooldown` (best-effort, OSError swallowed), `_cooldown_delay` (numeric Retry-After or base+jitter)
   - `_wait_for_cooldown` loop (re-reads after sleep — another process may extend); checked pre-lock and re-checked inside `_query_lock` before each attempt, never while holding the file lock
   - 429 handler writes cooldown, returns `Error: API returned 429 (rate limited; cooling down Ns)` — no retry (#26 stands)
-- [ ] #29 — bound the file-lock wait (`FileLock(timeout=60)` → actionable busy error)
+- [x] #29 — bound the file-lock wait (`FileLock(timeout=60)` → actionable busy error)
 
-**Verification:** `pytest tests/` 72 passed, 4 skipped.
+- [x] `tools/research.py` (#29, test-first: red on missing `_LOCK_TIMEOUT`, green after)
+  - `_LOCK_TIMEOUT = 60.0`; `_acquire_file_lock` raises `_QueryBusy` on expiry → `Error: another query is in flight (waited 60s); retry shortly`
+- [x] `tests/tools/test_research.py` (#29) — lock pre-held, query returns busy error in well under the old forever-wait
+
+**Verification:** `pytest tests/` 73 passed, 4 skipped.
 
 ### Coverage Notes
 
 | Module | Coverage | Classification | Reason |
 |---|---|---|---|
-| `tools/research.py` 39–40 | Uncovered | Acceptable | `_get_session` body — mocked out in all tool tests; covered indirectly by integration |
-| `tools/research.py` 124→126 | Uncovered | Acceptable | jitter-skip branch (`elapsed >= jitter`) — timing-dependent; consecutive-call path covered |
+| `tools/research.py` 44–45 | Uncovered | Acceptable | `_get_session` body — mocked out in all tool tests; covered indirectly by integration |
+| `tools/research.py` 135→137 | Uncovered | Acceptable | jitter-skip branch (`elapsed >= jitter`) — timing-dependent; consecutive-call path covered |
 | `client/endpoints.py` 63 | Uncovered | Acceptable | Blank-line `continue` in NDJSON stream — defensive skip; exercised in live integration |
 | `client/session.py` | 100% | — | statsig-absent branch covered (Phase 7 audit test) |
 

@@ -19,7 +19,7 @@ MCP server exposing Grok web/X research tools to any MCP client via cookie auth 
 - MCP memory service is operational session memory, not constitutional content (carried from pre-pin constitution).
 - Scope position per `docs/scope.md` (DRAFT — Owner review pending): L1 current. Terminal-bound constraints compiled there; Decide filters before ranking.
 - Role instances (proposed, Owner to confirm): Owner = Seva; Steward = OpenCode sessions; Critic = distinct-model session (first pass on the pin-bump commit pending); Auditor = MetaThrone (proposed).
-- Current phase pointer: Phase 8 in progress (#28 landed; #29 open). Phase 7 complete (#24 closed post-audit). #27 open as review-tracking (Critic/Auditor passes pending).
+- Current phase pointer: Phase 8 complete (#28 landed; #29 landed). #27 open as review-tracking (Critic/Auditor passes pending).
 
 ## Accepted deviations
 
