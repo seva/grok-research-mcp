@@ -89,7 +89,8 @@ MCP client (e.g. Claude Code, Cursor, Cline)
 
 ### `server.py`
 MCP stdio server. Registers tools, initializes auth on startup, routes tool calls.
-Uses the `mcp` Python SDK.
+Uses the `mcp` Python SDK. Tool wrappers carry no return annotation (#30):
+results return unstructured-only, no `structuredContent` envelope.
 
 ### `auth/browser.py`
 Spawns a headed Chromium instance via Playwright. Navigates to `grok.com`.
