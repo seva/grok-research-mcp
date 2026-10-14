@@ -20,6 +20,7 @@ MCP server exposing Grok web/X research tools to any MCP client via cookie auth 
 - Scope position per `docs/scope.md` (DRAFT — Owner review pending): L1 current. Terminal-bound constraints compiled there; Decide filters before ranking.
 - Role instances (proposed, Owner to confirm): Owner = Seva; Steward = OpenCode sessions; Critic = distinct-model session (first pass on the pin-bump commit pending); Auditor = MetaThrone (proposed).
 - Current phase pointer: Phase 8 complete (#28 landed; #29 landed). #27 open as review-tracking (Critic/Auditor passes pending).
+- Epistegrity pin: `db71dd4` (10/10 verbatim blobs match). `docs/raroc-pipeline.md` + `docs/fractal-decomposition.md` synced verbatim, UNADOPTED (both ADVISORY/UNENFORCED upstream; file sync != procedure adoption).
 
 ## Accepted deviations
 
